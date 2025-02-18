@@ -43,7 +43,7 @@ jobs:
         git config user.email "action@github.com"
 
     - name: Bump version
-      run: cargo install cargo-edit && cargo set-version --bump-patch
+      run: cargo install cargo-edit && cargo set-version --bump patch
 
     - name: Commit and push version change
       run: |
