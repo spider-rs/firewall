@@ -1060,7 +1060,7 @@ dependencies = [
 
 [[package]]
 name = "spider_firewall"
-version = "2.33.17"
+version = "2.33.20"
 dependencies = [
  "hashbrown",
  "phf",

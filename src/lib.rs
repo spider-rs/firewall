@@ -12,21 +12,26 @@ pub mod firewall {
     pub static GLOBAL_TRACKING_WEBSITES: OnceLock<&phf::Set<&'static str>> = OnceLock::new();
     /// Gambling websites list.
     pub static GLOBAL_GAMBLING_WEBSITES: OnceLock<&phf::Set<&'static str>> = OnceLock::new();
+    /// Networking XHR|Fetch general list.
+    pub static GLOBAL_NETWORKING_WEBSITES: OnceLock<&phf::Set<&'static str>> = OnceLock::new();
 
     /// Defines a set of websites under a specified category. Available categories
-    /// include "ads", "tracking", "gambling", and a default category for any other strings.
+    /// include "ads", "tracking", "gambling", "networking", and a default category for any other strings.
     ///
     /// # Examples
     ///
     /// ```
     /// use spider_firewall::define_firewall;
-    /// use spider_firewall::{is_ad_website_url, is_gambling_website_url, is_bad_website_url};
+    /// use spider_firewall::{is_ad_website_url, is_gambling_website_url, is_bad_website_url, is_networking_url};
     ///
     /// define_firewall!("ads", "example-ad.com", "another-ad.com");
     /// assert!(is_ad_website_url("example-ad.com"));
     ///
     /// define_firewall!("gambling", "example-gambling.com");
     /// assert!(is_gambling_website_url("example-gambling.com"));
+    ///
+    /// define_firewall!("networking", "a.ping.com");
+    /// assert!(is_networking_url("a.ping.com"));
     ///
     /// define_firewall!("unknown", "example-unknown.com");
     /// assert!(is_bad_website_url("example-unknown.com"));
@@ -37,33 +42,36 @@ pub mod firewall {
             match $category {
                 "ads" => {
                     if $crate::firewall::GLOBAL_ADS_WEBSITES.get().is_none() {
-                        static WEBSITES: phf::Set<&str> = phf::phf_set! { $($site),* };
                         $crate::firewall::GLOBAL_ADS_WEBSITES
-                            .set(&WEBSITES)
+                            .set(&phf::phf_set! { $($site),* })
                             .expect("Initialization already set.");
                     }
                 },
                 "tracking" => {
                     if $crate::firewall::GLOBAL_TRACKING_WEBSITES.get().is_none() {
-                        static WEBSITES: phf::Set<&str> = phf::phf_set! { $($site),* };
                         $crate::firewall::GLOBAL_TRACKING_WEBSITES
-                            .set(&WEBSITES)
+                            .set(&phf::phf_set! { $($site),* })
                             .expect("Initialization already set.");
                     }
                 },
                 "gambling" => {
                     if $crate::firewall::GLOBAL_GAMBLING_WEBSITES.get().is_none() {
-                        static WEBSITES: phf::Set<&str> = phf::phf_set! { $($site),* };
                         $crate::firewall::GLOBAL_GAMBLING_WEBSITES
-                            .set(&WEBSITES)
+                            .set(&phf::phf_set! { $($site),* })
+                            .expect("Initialization already set.");
+                    }
+                },
+                "networking" => {
+                    if $crate::firewall::GLOBAL_NETWORKING_WEBSITES.get().is_none() {
+                        $crate::firewall::GLOBAL_NETWORKING_WEBSITES
+                            .set(&phf::phf_set! { $($site),* })
                             .expect("Initialization already set.");
                     }
                 },
                 _ => {
                     if $crate::firewall::GLOBAL_BAD_WEBSITES.get().is_none() {
-                        static WEBSITES: phf::Set<&str> = phf::phf_set! { $($site),* };
                         $crate::firewall::GLOBAL_BAD_WEBSITES
-                            .set(&WEBSITES)
+                            .set(&phf::phf_set! { $($site),* })
                             .expect("Initialization already set.");
                     }
                 },
@@ -104,6 +112,13 @@ pub fn is_gambling_website_url(host: &str) -> bool {
         || is_website_in_custom_set(&host, &firewall::GLOBAL_GAMBLING_WEBSITES)
 }
 
+// General networking blocking. At the moment you have to build this list yourself with the macro define_firewall!("networking", "a.ping.com").
+pub fn is_networking_url(host: &str) -> bool {
+    BAD_WEBSITES.contains(&host)
+        || is_website_in_custom_set(&host, &firewall::GLOBAL_BAD_WEBSITES)
+        || is_website_in_custom_set(&host, &firewall::GLOBAL_NETWORKING_WEBSITES)
+}
+
 /// Is the website in one of the custom sets.
 fn is_website_in_custom_set(
     host: &str,
@@ -119,8 +134,7 @@ fn is_website_in_custom_set(
 /// The URL is in the bad list removing the URL http(s):// and paths.
 pub fn is_bad_website_url_clean(host: &str) -> bool {
     if let Some(host) = get_host_from_url(host) {
-        BAD_WEBSITES.contains(&host)
-            || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
+        is_bad_website_url(&host)
     } else {
         false
     }
@@ -129,8 +143,7 @@ pub fn is_bad_website_url_clean(host: &str) -> bool {
 /// The URL is in the ads list.
 pub fn is_ad_website_url_clean(host: &str) -> bool {
     if let Some(host) = get_host_from_url(host) {
-        ADS_WEBSITES.contains(&host)
-            || is_website_in_custom_set(host, &firewall::GLOBAL_ADS_WEBSITES)
+        is_ad_website_url(&host)
     } else {
         false
     }
@@ -139,8 +152,16 @@ pub fn is_ad_website_url_clean(host: &str) -> bool {
 /// The URL is in the tracking list.
 pub fn is_tracking_website_url_clean(host: &str) -> bool {
     if let Some(host) = get_host_from_url(host) {
-        TRACKING_WEBSITES.contains(&host)
-            || is_website_in_custom_set(&host, &firewall::GLOBAL_TRACKING_WEBSITES)
+        is_tracking_website_url(&host)
+    } else {
+        false
+    }
+}
+
+/// The URL is in the networking list.
+pub fn is_networking_website_url_clean(host: &str) -> bool {
+    if let Some(host) = get_host_from_url(host) {
+        is_networking_url(&host)
     } else {
         false
     }
@@ -149,8 +170,7 @@ pub fn is_tracking_website_url_clean(host: &str) -> bool {
 /// The URL is in the gambling list.
 pub fn is_gambling_website_url_clean(host: &str) -> bool {
     if let Some(host) = get_host_from_url(host) {
-        GAMBLING_WEBSITES.contains(&host)
-            || is_website_in_custom_set(&host, &firewall::GLOBAL_GAMBLING_WEBSITES)
+        is_gambling_website_url(&host)
     } else {
         false
     }
