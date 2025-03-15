@@ -71,13 +71,13 @@ fn main() -> std::io::Result<()> {
                         unique_ads_entries.insert(line.to_string());
                     }
                 }
-            }  else if item.name == "Gambling" {
+            } else if item.name == "Gambling" {
                 for line in file_content.lines() {
                     if !line.is_empty() {
                         unique_gambling_entries.insert(line.to_string());
                     }
                 }
-            }  else {
+            } else {
                 for line in file_content.lines() {
                     if !line.is_empty() {
                         unique_entries.insert(line.to_string());
@@ -128,7 +128,6 @@ fn main() -> std::io::Result<()> {
     for entry in unique_gambling_entries {
         gambling_set.entry(entry);
     }
-
 
     // Write to destination
     let out_dir = env::var("OUT_DIR").unwrap();
