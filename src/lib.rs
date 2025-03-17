@@ -205,14 +205,14 @@ mod tests {
 
     #[test]
     fn test_is_ad_website_url() {
-        let bad_website = "admob.google.com";
-        assert!(is_ad_website_url(bad_website));
+        assert!(is_ad_website_url("admob.google.com"));
+        assert!(is_ad_website_url("ads.linkedin.com"));
     }
 
     #[test]
     fn test_is_tracking_website_url() {
-        let bad_website = "2.atlasroofing.com";
-        assert!(is_tracking_website_url(bad_website));
+        assert!(is_tracking_website_url("2.atlasroofing.com"));
+        assert!(is_tracking_website_url("pixel.rubiconproject.net.akadns.net"));
     }
 
     #[test]

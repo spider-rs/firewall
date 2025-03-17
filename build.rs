@@ -87,6 +87,56 @@ fn main() -> std::io::Result<()> {
         }
     }
 
+    // fetch HOST1 content
+
+    // Fetch and process GitHub directory files
+    let base_url = "https://api.github.com/repos/badmojr/1Hosts/contents/Lite/";
+    let response = client
+        .get(base_url)
+        .header("User-Agent", "request")
+        .send()
+        .expect("Failed to fetch directory listing");
+
+    let contents: Vec<GithubContent> = response.json().expect("Failed to parse JSON response");
+
+    let skip_list = vec!["rpz", "domains.wildcards", "wildcards", "unbound.conf"];
+
+    for item in contents {
+        // ignore these websites.
+        if skip_list.contains(&item.name.as_str()) {
+            continue;
+        }
+        if item.content_type == "file" {
+            let file_url = format!(
+                "https://raw.githubusercontent.com/badmojr/1Hosts/master/{}",
+                item.path
+            );
+            let file_response = client
+                .get(&file_url)
+                .send()
+                .expect("Failed to fetch file content");
+
+            let file_content = file_response.text().expect("Failed to read file content");
+
+            if item.name == "domains.txt" {
+                for line in file_content.lines().skip(15) {
+                    if !line.is_empty() {
+                        unique_tracking_entries.insert(line.to_string());
+                    }
+                }
+            } else if item.name == "adblock.txt" {
+                for line in file_content.lines().skip(15) {
+                    if !line.is_empty() {
+                        let mut ad_url = line.replacen("||", "", 1);
+                        ad_url.pop();
+
+                        unique_ads_entries.insert(ad_url);
+                    }
+                }
+            }
+        }
+    }
+
     // Fetch and process the additional text file
     let additional_url =
         "https://raw.githubusercontent.com/spider-rs/bad_websites/main/websites.txt";

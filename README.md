@@ -60,6 +60,11 @@ fn main() {
 }
 ```
 
+## Blockers sourced
+
+1. https://github.com/ShadowWhisperer/BlockLists
+1. https://github.com/badmojr/1Hosts
+
 ## Build Time
 
 The initial build can take longer, approximately 5-10 minutes, as it may involve compiling dependencies and generating necessary data files.
