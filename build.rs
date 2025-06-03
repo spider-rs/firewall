@@ -16,6 +16,42 @@ struct GithubContent {
     content_type: String,
 }
 
+// local domains to include past ignore. These are valid domains.
+static WHITE_LIST_AD_DOMAINS: phf::Set<&'static str> = phf::phf_set! {
+    "anydesk.com",
+    "firstaidbeauty.com",
+    "teads.com",
+    "appchair.com",
+    "ninjacat.io",
+    "oceango.net",
+    "center.io",
+    "bing.com",
+    "unity3d.com",
+    "adguard.com",
+    "bitdefender.com",
+    "blogspot.com",
+    "bytedance.com",
+    "comcast.net",
+    "duckdns.org",
+    "dyndns.org",
+    "fontawesome.com",
+    "grammarly.com",
+    "onenote.com",
+    "opendns.com",
+    "surfshark.com",
+    "teamviewer.com",
+    "tencent.com",
+    "tiktok.com",
+    "yandex.net",
+    "zoho.com",
+    "tiktokcdn-us.com",
+    "tiktokcdn.com",
+    "tiktokv.com",
+    "tiktokrow-cdn.com",
+    "tiktokv.us"
+};
+
+
 fn main() -> std::io::Result<()> {
     let client = Client::new();
     let mut unique_entries = HashSet::new();
@@ -158,7 +194,9 @@ fn main() -> std::io::Result<()> {
     let mut set = phf_codegen::Set::new();
 
     for entry in unique_entries {
-        set.entry(entry);
+        if !WHITE_LIST_AD_DOMAINS.contains(&entry) {
+            set.entry(entry);
+        }
     }
 
     let mut ads_set = phf_codegen::Set::new();

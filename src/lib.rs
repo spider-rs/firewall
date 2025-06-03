@@ -226,5 +226,8 @@ mod tests {
 
         define_firewall!("unknown", "anotherbadwebsite.com");
         assert!(is_bad_website_url("anotherbadwebsite.com"));
+
+        define_firewall!("global", "chrome:/");
+        assert!(is_ad_website_url("chrome://about"));
     }
 }
