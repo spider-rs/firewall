@@ -27,7 +27,7 @@ fn main() -> std::io::Result<()> {
     let base_url = "https://api.github.com/repos/ShadowWhisperer/BlockLists/contents/RAW";
     let response = client
         .get(base_url)
-        .header("User-Agent", "request")
+        .header("User-Agent", ua_generator::ua::spoof_ua())
         .send()
         .expect("Failed to fetch directory listing");
 
@@ -93,7 +93,7 @@ fn main() -> std::io::Result<()> {
     let base_url = "https://api.github.com/repos/badmojr/1Hosts/contents/Lite/";
     let response = client
         .get(base_url)
-        .header("User-Agent", "request")
+        .header("User-Agent", ua_generator::ua::spoof_ua())
         .send()
         .expect("Failed to fetch directory listing");
 
