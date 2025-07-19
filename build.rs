@@ -48,7 +48,8 @@ static WHITE_LIST_AD_DOMAINS: phf::Set<&'static str> = phf::phf_set! {
     "tiktokcdn.com",
     "tiktokv.com",
     "tiktokrow-cdn.com",
-    "tiktokv.us"
+    "tiktokv.us",
+    "wpengine.com"
 };
 
 
