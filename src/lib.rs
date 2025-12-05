@@ -212,7 +212,9 @@ mod tests {
     #[test]
     fn test_is_tracking_website_url() {
         assert!(is_tracking_website_url("2.atlasroofing.com"));
-        assert!(is_tracking_website_url("pixel.rubiconproject.net.akadns.net"));
+        assert!(is_tracking_website_url(
+            "pixel.rubiconproject.net.akadns.net"
+        ));
     }
 
     #[test]

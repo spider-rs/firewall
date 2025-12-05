@@ -52,7 +52,6 @@ static WHITE_LIST_AD_DOMAINS: phf::Set<&'static str> = phf::phf_set! {
     "wpengine.com"
 };
 
-
 fn main() -> std::io::Result<()> {
     let client = Client::new();
     let mut unique_entries = HashSet::new();
@@ -77,6 +76,7 @@ fn main() -> std::io::Result<()> {
         "Microsoft",
         "Marketing",
         "Wild_Tracking",
+        "Free",
     ];
 
     for item in contents {
@@ -143,7 +143,9 @@ fn main() -> std::io::Result<()> {
         if skip_list.contains(&item.name.as_str()) {
             continue;
         }
-        if item.content_type == "file" {
+
+        if item.content_type == "file" && (item.name == "domains.txt" || item.name == "adblock.txt")
+        {
             let file_url = format!(
                 "https://raw.githubusercontent.com/badmojr/1Hosts/master/{}",
                 item.path
