@@ -155,6 +155,16 @@ pub fn is_networking_url(host: &str) -> bool {
         || is_website_in_custom_set(host, &firewall::GLOBAL_NETWORKING_WEBSITES)
 }
 
+/// Determine a generic bad url.
+pub fn is_url_bad(host: &str) -> bool {
+    fst_contains(bad_set(), host)
+        || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
+        || is_website_in_custom_set(host, &firewall::GLOBAL_ADS_WEBSITES)
+        || is_website_in_custom_set(host, &firewall::GLOBAL_NETWORKING_WEBSITES)
+        || is_website_in_custom_set(host, &firewall::GLOBAL_TRACKING_WEBSITES)
+        || is_website_in_custom_set(host, &firewall::GLOBAL_GAMBLING_WEBSITES)
+}
+
 /// Is the website in one of the custom sets.
 fn is_website_in_custom_set(
     host: &str,
