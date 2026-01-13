@@ -1,23 +1,22 @@
+// build.rs
 use hashbrown::HashSet;
 use reqwest::blocking::Client;
 use serde::Deserialize;
 use std::env;
-use std::fs;
+use std::fs::{self, File};
+use std::io::BufWriter;
 use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 struct GithubContent {
-    /// The name of the package
     name: String,
-    /// The path.
     path: String,
-    /// The content type.
     #[serde(rename = "type")]
     content_type: String,
 }
 
 // local domains to include past ignore. These are valid domains.
-static WHITE_LIST_AD_DOMAINS: phf::Set<&'static str> = phf::phf_set! {
+static WHITE_LIST_AD_DOMAINS: &[&str] = &[
     "anydesk.com",
     "firstaidbeauty.com",
     "teads.com",
@@ -49,17 +48,40 @@ static WHITE_LIST_AD_DOMAINS: phf::Set<&'static str> = phf::phf_set! {
     "tiktokv.com",
     "tiktokrow-cdn.com",
     "tiktokv.us",
-    "wpengine.com"
-};
+    "wpengine.com",
+];
 
-fn main() -> std::io::Result<()> {
+type BuildResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+fn write_fst(path: &PathBuf, mut entries: Vec<String>) -> BuildResult<()> {
+    // FST builder requires lexicographic order and no dups.
+    entries.sort();
+    entries.dedup();
+
+    let w = BufWriter::new(File::create(path)?);
+    let mut builder = fst::SetBuilder::new(w)?; // fst::Error now OK
+
+    for s in entries {
+        if !s.is_empty() {
+            builder.insert(s)?; // fst::Error now OK
+        }
+    }
+
+    builder.finish()?; // fst::Error now OK
+    Ok(())
+}
+
+fn main() -> BuildResult<()> {
     let client = Client::new();
-    let mut unique_entries = HashSet::new();
-    let mut unique_ads_entries = HashSet::new();
-    let mut unique_tracking_entries = HashSet::new();
-    let mut unique_gambling_entries = HashSet::new();
 
-    // Fetch and process GitHub directory files
+    let mut unique_entries = HashSet::<String>::new();
+    let mut unique_ads_entries = HashSet::<String>::new();
+    let mut unique_tracking_entries = HashSet::<String>::new();
+    let mut unique_gambling_entries = HashSet::<String>::new();
+
+    // ----------------------------
+    // ShadowWhisperer/BlockLists
+    // ----------------------------
     let base_url = "https://api.github.com/repos/ShadowWhisperer/BlockLists/contents/RAW";
     let response = client
         .get(base_url)
@@ -80,10 +102,10 @@ fn main() -> std::io::Result<()> {
     ];
 
     for item in contents {
-        // ignore these websites.
         if skip_list.contains(&item.name.as_str()) {
             continue;
         }
+
         if item.content_type == "file" {
             let file_url = format!(
                 "https://raw.githubusercontent.com/ShadowWhisperer/BlockLists/master/{}",
@@ -93,40 +115,43 @@ fn main() -> std::io::Result<()> {
                 .get(&file_url)
                 .send()
                 .expect("Failed to fetch file content");
-
             let file_content = file_response.text().expect("Failed to read file content");
 
             if item.name == "Wild_Tracking" || item.name == "Tracking" {
                 for line in file_content.lines() {
-                    if !line.is_empty() {
-                        unique_tracking_entries.insert(line.to_string());
+                    let s = line.trim();
+                    if !s.is_empty() {
+                        unique_tracking_entries.insert(s.to_string());
                     }
                 }
             } else if item.name == "Wild_Ads" || item.name == "Ads" {
                 for line in file_content.lines() {
-                    if !line.is_empty() {
-                        unique_ads_entries.insert(line.to_string());
+                    let s = line.trim();
+                    if !s.is_empty() {
+                        unique_ads_entries.insert(s.to_string());
                     }
                 }
             } else if item.name == "Gambling" {
                 for line in file_content.lines() {
-                    if !line.is_empty() {
-                        unique_gambling_entries.insert(line.to_string());
+                    let s = line.trim();
+                    if !s.is_empty() {
+                        unique_gambling_entries.insert(s.to_string());
                     }
                 }
             } else {
                 for line in file_content.lines() {
-                    if !line.is_empty() {
-                        unique_entries.insert(line.to_string());
+                    let s = line.trim();
+                    if !s.is_empty() {
+                        unique_entries.insert(s.to_string());
                     }
                 }
             }
         }
     }
 
-    // fetch HOST1 content
-
-    // Fetch and process GitHub directory files
+    // ----------------------------
+    // badmojr/1Hosts (Lite)
+    // ----------------------------
     let base_url = "https://api.github.com/repos/badmojr/1Hosts/contents/Lite/";
     let response = client
         .get(base_url)
@@ -135,11 +160,9 @@ fn main() -> std::io::Result<()> {
         .expect("Failed to fetch directory listing");
 
     let contents: Vec<GithubContent> = response.json().expect("Failed to parse JSON response");
-
     let skip_list = vec!["rpz", "domains.wildcards", "wildcards", "unbound.conf"];
 
     for item in contents {
-        // ignore these websites.
         if skip_list.contains(&item.name.as_str()) {
             continue;
         }
@@ -154,29 +177,35 @@ fn main() -> std::io::Result<()> {
                 .get(&file_url)
                 .send()
                 .expect("Failed to fetch file content");
-
             let file_content = file_response.text().expect("Failed to read file content");
 
             if item.name == "domains.txt" {
                 for line in file_content.lines().skip(15) {
-                    if !line.is_empty() {
-                        unique_tracking_entries.insert(line.to_string());
+                    let s = line.trim();
+                    if !s.is_empty() {
+                        unique_tracking_entries.insert(s.to_string());
                     }
                 }
-            } else if item.name == "adblock.txt" {
+            } else {
                 for line in file_content.lines().skip(15) {
-                    if !line.is_empty() {
-                        let mut ad_url = line.replacen("||", "", 1);
-                        ad_url.pop();
-
-                        unique_ads_entries.insert(ad_url);
+                    let s = line.trim();
+                    if !s.is_empty() {
+                        let mut ad_url = s.replacen("||", "", 1);
+                        if ad_url.ends_with('^') {
+                            ad_url.pop();
+                        }
+                        if !ad_url.is_empty() {
+                            unique_ads_entries.insert(ad_url);
+                        }
                     }
                 }
             }
         }
     }
 
-    // Fetch and process the additional text file
+    // ----------------------------
+    // spider-rs/bad_websites additional file
+    // ----------------------------
     let additional_url =
         "https://raw.githubusercontent.com/spider-rs/bad_websites/main/websites.txt";
     let response = client
@@ -187,59 +216,58 @@ fn main() -> std::io::Result<()> {
     let additional_content = response
         .text()
         .expect("Failed to read additional file content");
+
     for line in additional_content.lines() {
-        let entry = line.trim_matches(|c| c == '"' || c == ',').to_owned();
+        let entry = line.trim_matches(|c| c == '"' || c == ',').trim();
         if !entry.is_empty() {
-            unique_entries.insert(entry);
+            unique_entries.insert(entry.to_string());
         }
     }
 
-    let mut set = phf_codegen::Set::new();
+    // ----------------------------
+    // Apply whitelist to BAD only
+    // ----------------------------
+    let whitelist: HashSet<&'static str> = WHITE_LIST_AD_DOMAINS.iter().copied().collect();
 
-    for entry in unique_entries {
-        if !WHITE_LIST_AD_DOMAINS.contains(&entry) {
-            set.entry(entry);
-        }
-    }
+    let bad_vec: Vec<String> = unique_entries
+        .into_iter()
+        .filter(|e| !whitelist.contains(e.as_str()))
+        .collect();
 
-    let mut ads_set = phf_codegen::Set::new();
+    let ads_vec: Vec<String> = unique_ads_entries.into_iter().collect();
+    let tracking_vec: Vec<String> = unique_tracking_entries.into_iter().collect();
+    let gambling_vec: Vec<String> = unique_gambling_entries.into_iter().collect();
 
-    for entry in unique_ads_entries {
-        ads_set.entry(entry);
-    }
+    // ----------------------------
+    // Write outputs
+    // ----------------------------
+    let out_dir = PathBuf::from(env::var("OUT_DIR")?);
 
-    let mut tracking_set = phf_codegen::Set::new();
+    let bad_fst_path = out_dir.join("bad_websites.fst");
+    let ads_fst_path = out_dir.join("ads_websites.fst");
+    let tracking_fst_path = out_dir.join("tracking_websites.fst");
+    let gambling_fst_path = out_dir.join("gambling_websites.fst");
 
-    for entry in unique_tracking_entries {
-        tracking_set.entry(entry);
-    }
+    write_fst(&bad_fst_path, bad_vec)?;
+    write_fst(&ads_fst_path, ads_vec)?;
+    write_fst(&tracking_fst_path, tracking_vec)?;
+    write_fst(&gambling_fst_path, gambling_vec)?;
 
-    let mut gambling_set = phf_codegen::Set::new();
-
-    for entry in unique_gambling_entries {
-        gambling_set.entry(entry);
-    }
-
-    // Write to destination
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let dest_path = PathBuf::from(out_dir).join("bad_websites.rs");
-
+    // Tiny Rust include file (no giant static strings)
+    let dest_rs = out_dir.join("bad_websites.rs");
     fs::write(
-        &dest_path,
-        format!(
-            "/// Bad websites that we should not connect to.\n\
-            static BAD_WEBSITES: phf::Set<&'static str> = {};\n
-            /// Ads websites that we should not connect to.\n\
-            static ADS_WEBSITES: phf::Set<&'static str> = {};\n
-            /// Tracking websites that we should not connect to.\n\
-            static TRACKING_WEBSITES: phf::Set<&'static str> = {};\n
-            /// Gambling websites that we should not connect to.\n\
-            static GAMBLING_WEBSITES: phf::Set<&'static str> = {};",
-            set.build(),
-            ads_set.build(),
-            tracking_set.build(),
-            gambling_set.build()
-        ),
+        &dest_rs,
+        r#"
+// Auto-generated by build.rs
+pub static BAD_WEBSITES_FST_BYTES: &'static [u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/bad_websites.fst"));
+pub static ADS_WEBSITES_FST_BYTES: &'static [u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/ads_websites.fst"));
+pub static TRACKING_WEBSITES_FST_BYTES: &'static [u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/tracking_websites.fst"));
+pub static GAMBLING_WEBSITES_FST_BYTES: &'static [u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/gambling_websites.fst"));
+"#,
     )?;
 
     Ok(())
