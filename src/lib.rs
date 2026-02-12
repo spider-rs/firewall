@@ -82,32 +82,46 @@ pub mod firewall {
 
 use std::sync::OnceLock;
 
-/// FST sets (loaded from bytes generated in build.rs)
-static BAD_FST: OnceLock<fst::Set<&'static [u8]>> = OnceLock::new();
-static ADS_FST: OnceLock<fst::Set<&'static [u8]>> = OnceLock::new();
-static TRACKING_FST: OnceLock<fst::Set<&'static [u8]>> = OnceLock::new();
-static GAMBLING_FST: OnceLock<fst::Set<&'static [u8]>> = OnceLock::new();
+/// Category bitmask flags — must stay in sync with build.rs.
+const CAT_BAD: u64 = 1;
+const CAT_ADS: u64 = 2;
+const CAT_TRACKING: u64 = 4;
+const CAT_GAMBLING: u64 = 8;
+
+/// Unified FST Map (loaded from bytes generated in build.rs)
+static FIREWALL_MAP: OnceLock<fst::Map<&'static [u8]>> = OnceLock::new();
 
 #[inline]
-fn bad_set() -> &'static fst::Set<&'static [u8]> {
-    BAD_FST.get_or_init(|| fst::Set::new(BAD_WEBSITES_FST_BYTES).expect("bad fst invalid"))
+fn firewall_map() -> &'static fst::Map<&'static [u8]> {
+    FIREWALL_MAP
+        .get_or_init(|| fst::Map::new(FIREWALL_FST_BYTES).expect("firewall fst invalid"))
 }
 
+/// Check if host (or any parent domain) has the given category in the FST.
+/// Walks up the domain hierarchy: "a.b.example.com" -> "b.example.com" -> "example.com".
 #[inline]
-fn ads_set() -> &'static fst::Set<&'static [u8]> {
-    ADS_FST.get_or_init(|| fst::Set::new(ADS_WEBSITES_FST_BYTES).expect("ads fst invalid"))
-}
-
-#[inline]
-fn tracking_set() -> &'static fst::Set<&'static [u8]> {
-    TRACKING_FST
-        .get_or_init(|| fst::Set::new(TRACKING_WEBSITES_FST_BYTES).expect("tracking fst invalid"))
-}
-
-#[inline]
-fn gambling_set() -> &'static fst::Set<&'static [u8]> {
-    GAMBLING_FST
-        .get_or_init(|| fst::Set::new(GAMBLING_WEBSITES_FST_BYTES).expect("gambling fst invalid"))
+fn fst_has_category(host: &str, cat: u64) -> bool {
+    let map = firewall_map();
+    let mut h = host;
+    loop {
+        if let Some(v) = map.get(h) {
+            if v & cat != 0 {
+                return true;
+            }
+        }
+        // Move to the parent domain.
+        match h.find('.') {
+            Some(dot) => {
+                h = &h[dot + 1..];
+                // Stop if the remainder has no dot (bare TLD).
+                if !h.contains('.') {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+    false
 }
 
 /// Get the hostname from a url.
@@ -123,46 +137,63 @@ pub fn get_host_from_url(url: &str) -> Option<&str> {
     }
 }
 
-#[inline]
-fn fst_contains(set: &fst::Set<&'static [u8]>, host: &str) -> bool {
-    // fst::Set::contains does not allocate.
-    set.contains(host)
-}
-
-// Utilize the OnceLock sets within functions
 pub fn is_bad_website_url(host: &str) -> bool {
-    fst_contains(bad_set(), host) || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
+    fst_has_category(host, CAT_BAD)
+        || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
 }
 
 pub fn is_ad_website_url(host: &str) -> bool {
-    fst_contains(ads_set(), host) || is_website_in_custom_set(host, &firewall::GLOBAL_ADS_WEBSITES)
+    fst_has_category(host, CAT_ADS)
+        || is_website_in_custom_set(host, &firewall::GLOBAL_ADS_WEBSITES)
 }
 
 pub fn is_tracking_website_url(host: &str) -> bool {
-    fst_contains(tracking_set(), host)
+    fst_has_category(host, CAT_TRACKING)
         || is_website_in_custom_set(host, &firewall::GLOBAL_TRACKING_WEBSITES)
 }
 
 pub fn is_gambling_website_url(host: &str) -> bool {
-    fst_contains(gambling_set(), host)
+    fst_has_category(host, CAT_GAMBLING)
         || is_website_in_custom_set(host, &firewall::GLOBAL_GAMBLING_WEBSITES)
 }
 
-// General networking blocking. At the moment you have to build this list yourself with the macro define_firewall!("networking", "a.ping.com").
+/// General networking blocking. At the moment you have to build this list yourself with the macro define_firewall!("networking", "a.ping.com").
 pub fn is_networking_url(host: &str) -> bool {
-    fst_contains(bad_set(), host)
+    fst_has_category(host, CAT_BAD)
         || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
         || is_website_in_custom_set(host, &firewall::GLOBAL_NETWORKING_WEBSITES)
 }
 
 /// Determine a generic bad url.
 pub fn is_url_bad(host: &str) -> bool {
-    fst_contains(bad_set(), host)
+    fst_contains_any(host)
         || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
         || is_website_in_custom_set(host, &firewall::GLOBAL_ADS_WEBSITES)
         || is_website_in_custom_set(host, &firewall::GLOBAL_NETWORKING_WEBSITES)
         || is_website_in_custom_set(host, &firewall::GLOBAL_TRACKING_WEBSITES)
         || is_website_in_custom_set(host, &firewall::GLOBAL_GAMBLING_WEBSITES)
+}
+
+/// Check if host (or any parent domain) exists in the FST under any category.
+#[inline]
+fn fst_contains_any(host: &str) -> bool {
+    let map = firewall_map();
+    let mut h = host;
+    loop {
+        if map.contains_key(h) {
+            return true;
+        }
+        match h.find('.') {
+            Some(dot) => {
+                h = &h[dot + 1..];
+                if !h.contains('.') {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+    false
 }
 
 /// Is the website in one of the custom sets.
