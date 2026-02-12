@@ -10,6 +10,41 @@ Add `spider_firewall` to your Cargo project with:
 cargo add spider_firewall
 ```
 
+## Size Tiers
+
+The `small` tier is enabled by default. Enable `medium` or `large` for broader coverage — each tier includes all sources from the tier(s) below it.
+
+| Tier | FST Size | Focus | Feature Flag |
+|------|----------|-------|--------------|
+| **small** (default) | ~13 MB | Ads, tracking, malware, phishing, scams | `small` |
+| **medium** | ~26 MB | + ransomware, fraud, abuse, threat intel | `medium` |
+| **large** | ~52 MB | + redirect/typosquatting, extended ads/tracking, full URLhaus | `large` |
+
+```toml
+# Default — small tier, all categories:
+spider_firewall = "2.35"
+
+# Medium tier:
+spider_firewall = { version = "2.35", features = ["medium"] }
+
+# Large tier:
+spider_firewall = { version = "2.35", features = ["large"] }
+
+# Small tier, only bad + ads (no tracking/gambling):
+spider_firewall = { version = "2.35", default-features = false, features = ["default-tls", "bad", "ads", "small"] }
+```
+
+## Category Features
+
+Categories can be toggled independently (all enabled by default):
+
+| Feature | Description |
+|---------|-------------|
+| `bad` | Malware, phishing, scams, fraud, ransomware, abuse |
+| `ads` | Advertising domains |
+| `tracking` | Tracking and analytics domains |
+| `gambling` | Gambling domains |
+
 ## Usage
 
 ### Checking for Bad Websites
@@ -60,10 +95,40 @@ fn main() {
 }
 ```
 
-## Blockers sourced
+## Blocklist Sources
 
-1. https://github.com/ShadowWhisperer/BlockLists
-1. https://github.com/badmojr/1Hosts
+### Small (default)
+
+| Source | Categories | License |
+|--------|-----------|---------|
+| [ShadowWhisperer/BlockLists](https://github.com/ShadowWhisperer/BlockLists) | bad, ads, tracking, gambling | MIT |
+| [badmojr/1Hosts Lite](https://github.com/badmojr/1Hosts) | ads, tracking | MPL-2.0 |
+| [spider-rs/bad_websites](https://github.com/spider-rs/bad_websites) | bad | MIT |
+| [Steven Black Unified Hosts](https://github.com/StevenBlack/hosts) | bad | MIT |
+| [Block List Project — Malware](https://github.com/blocklistproject/Lists) | bad | MIT |
+| [Block List Project — Phishing](https://github.com/blocklistproject/Lists) | bad | MIT |
+| [Block List Project — Scam](https://github.com/blocklistproject/Lists) | bad | MIT |
+| [URLhaus Filter (domains)](https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-domains.txt) | bad | CC0/MIT |
+
+### Medium (adds)
+
+| Source | Categories | License |
+|--------|-----------|---------|
+| [Block List Project — Ransomware](https://github.com/blocklistproject/Lists) | bad | MIT |
+| [Block List Project — Fraud](https://github.com/blocklistproject/Lists) | bad | MIT |
+| [Block List Project — Abuse](https://github.com/blocklistproject/Lists) | bad | MIT |
+| [Phishing.Database — Active Domains](https://github.com/mitchellkrogza/Phishing.Database) | bad | MIT |
+| [Stamparm/maltrail — Suspicious](https://github.com/stamparm/maltrail) | bad | MIT |
+
+### Large (adds)
+
+| Source | Categories | License |
+|--------|-----------|---------|
+| [Block List Project — Redirect](https://github.com/blocklistproject/Lists) | bad | MIT |
+| [Block List Project — Tracking](https://github.com/blocklistproject/Lists) | tracking | MIT |
+| [Block List Project — Ads](https://github.com/blocklistproject/Lists) | ads | MIT |
+| [Stamparm/maltrail — Malware](https://github.com/stamparm/maltrail) | bad | MIT |
+| [abuse.ch URLhaus Hostfile](https://urlhaus.abuse.ch/downloads/hostfile/) | bad | CC0 |
 
 ## Build Time
 

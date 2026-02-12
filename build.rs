@@ -60,22 +60,86 @@ static WHITE_LIST_AD_DOMAINS: &[&str] = &[
 
 type BuildResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+fn fetch_text(client: &Client, url: &str) -> String {
+    client
+        .get(url)
+        .header("User-Agent", ua_generator::ua::spoof_ua())
+        .send()
+        .unwrap_or_else(|_| panic!("Failed to fetch {}", url))
+        .text()
+        .unwrap_or_else(|_| panic!("Failed to read {}", url))
+}
+
+/// Parse a hosts-format file (e.g. `0.0.0.0 domain` or `127.0.0.1 domain`),
+/// skipping comments, localhost aliases, and ip6-* entries.
+fn parse_hosts_lines(body: &str, out: &mut HashSet<String>) {
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut parts = trimmed.split_whitespace();
+        let _ip = match parts.next() {
+            Some(v) => v,
+            None => continue,
+        };
+        let domain = match parts.next() {
+            Some(v) => v,
+            None => continue,
+        };
+        if matches!(
+            domain,
+            "localhost" | "0.0.0.0" | "local" | "localhost.localdomain" | "broadcasthost"
+        ) || domain.contains("ip6-")
+        {
+            continue;
+        }
+        out.insert(domain.to_string());
+    }
+}
+
+/// Parse a plain-text domain list (one domain per line), skipping comments and
+/// empty lines. Handles optional inline comments (e.g. `domain # note`).
+fn parse_domain_lines(body: &str, out: &mut HashSet<String>) {
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let domain = trimmed.split_whitespace().next().unwrap_or("");
+        if !domain.is_empty() {
+            out.insert(domain.to_string());
+        }
+    }
+}
+
 fn main() -> BuildResult<()> {
     let client = Client::new();
 
+    // Category flags
     let include_bad = env::var("CARGO_FEATURE_BAD").is_ok();
     let include_ads = env::var("CARGO_FEATURE_ADS").is_ok();
     let include_tracking = env::var("CARGO_FEATURE_TRACKING").is_ok();
     let include_gambling = env::var("CARGO_FEATURE_GAMBLING").is_ok();
+
+    // Tier flags (large implies medium implies small via Cargo feature deps)
+    let tier_small = env::var("CARGO_FEATURE_SMALL").is_ok();
+    let tier_medium = env::var("CARGO_FEATURE_MEDIUM").is_ok();
+    let tier_large = env::var("CARGO_FEATURE_LARGE").is_ok();
 
     let mut unique_entries = HashSet::<String>::new();
     let mut unique_ads_entries = HashSet::<String>::new();
     let mut unique_tracking_entries = HashSet::<String>::new();
     let mut unique_gambling_entries = HashSet::<String>::new();
 
-    let need_shadow = include_bad || include_ads || include_tracking || include_gambling;
-    let need_1hosts = include_ads || include_tracking;
-    let need_spider = include_bad;
+    let need_shadow =
+        tier_small && (include_bad || include_ads || include_tracking || include_gambling);
+    let need_1hosts = tier_small && (include_ads || include_tracking);
+    let need_spider = tier_small && include_bad;
+
+    // ============================================================
+    //  SMALL tier sources
+    // ============================================================
 
     // ----------------------------
     // ShadowWhisperer/BlockLists
@@ -251,6 +315,176 @@ fn main() -> BuildResult<()> {
                 unique_entries.insert(entry.to_string());
             }
         }
+    }
+
+    // ----------------------------
+    // Steven Black Unified Hosts
+    // ----------------------------
+    if tier_small && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+        );
+        parse_hosts_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // Block List Project — Malware
+    // ----------------------------
+    if tier_small && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/blocklistproject/Lists/master/alt-version/malware-nl.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // Block List Project — Phishing
+    // ----------------------------
+    if tier_small && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/blocklistproject/Lists/master/alt-version/phishing-nl.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // Block List Project — Scam
+    // ----------------------------
+    if tier_small && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/blocklistproject/Lists/master/alt-version/scam-nl.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // URLhaus Filter — Malware Domains
+    // ----------------------------
+    if tier_small && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-domains.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ============================================================
+    //  MEDIUM tier sources (threat-intelligence hardening)
+    // ============================================================
+
+    // ----------------------------
+    // Block List Project — Ransomware
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/blocklistproject/Lists/master/alt-version/ransomware-nl.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // Block List Project — Fraud
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/blocklistproject/Lists/master/alt-version/fraud-nl.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // Block List Project — Abuse
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/blocklistproject/Lists/master/alt-version/abuse-nl.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // Phishing.Database — Active Domains
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/phishing-domains-ACTIVE.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // Stamparm/maltrail — Suspicious Domains
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/stamparm/maltrail/master/trails/static/suspicious/domain.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ============================================================
+    //  LARGE tier sources (comprehensive protection)
+    // ============================================================
+
+    // ----------------------------
+    // Block List Project — Redirect
+    // ----------------------------
+    if tier_large && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/blocklistproject/Lists/master/alt-version/redirect-nl.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // Block List Project — Tracking
+    // ----------------------------
+    if tier_large && include_tracking {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/blocklistproject/Lists/master/alt-version/tracking-nl.txt",
+        );
+        parse_domain_lines(&body, &mut unique_tracking_entries);
+    }
+
+    // ----------------------------
+    // Block List Project — Ads
+    // ----------------------------
+    if tier_large && include_ads {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/blocklistproject/Lists/master/alt-version/ads-nl.txt",
+        );
+        parse_domain_lines(&body, &mut unique_ads_entries);
+    }
+
+    // ----------------------------
+    // Stamparm/maltrail — Malware Domains
+    // ----------------------------
+    if tier_large && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/stamparm/maltrail/master/trails/static/malware/domain.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // abuse.ch URLhaus — Full Hostfile
+    // ----------------------------
+    if tier_large && include_bad {
+        let body = fetch_text(&client, "https://urlhaus.abuse.ch/downloads/hostfile/");
+        parse_hosts_lines(&body, &mut unique_entries);
     }
 
     // ----------------------------

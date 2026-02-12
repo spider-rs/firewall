@@ -1,6 +1,6 @@
 [package]
 name = "spider_firewall"
-version = "2.34.0"
+version = "2.35.0"
 authors = [
     "j-mendez <jeff@spider.cloud>"
 ]
@@ -18,11 +18,14 @@ phf = { version = "0.11", features = ["macros"] }
 fst = "0.4"
 
 [features]
-default = ["default-tls", "bad", "ads", "tracking", "gambling"]
+default = ["default-tls", "bad", "ads", "tracking", "gambling", "small"]
 bad = []
 ads = []
 tracking = []
 gambling = []
+small = []
+medium = ["small"]
+large = ["medium"]
 rustls = ["reqwest/rustls-tls"]
 default-tls = ["reqwest/default-tls"]
 
