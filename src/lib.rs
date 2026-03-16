@@ -281,6 +281,12 @@ mod tests {
     }
 
     #[test]
+    fn test_ning_com_whitelisted() {
+        assert!(!is_bad_website_url("ning.com"), "ning.com should be whitelisted");
+        assert!(!is_bad_website_url("competitiveintelligence.ning.com"), "subdomain of ning.com should be whitelisted");
+    }
+
+    #[test]
     fn test_define_firewall_macro() {
         define_firewall!("ads", "adwebsite.com", "ad1website.com");
 
