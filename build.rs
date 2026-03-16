@@ -56,6 +56,7 @@ static WHITE_LIST_AD_DOMAINS: &[&str] = &[
     "tiktokrow-cdn.com",
     "tiktokv.us",
     "wpengine.com",
+    "ning.com",
 ];
 
 type BuildResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
