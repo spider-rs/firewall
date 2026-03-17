@@ -517,6 +517,24 @@ fn main() -> BuildResult<()> {
     // ----------------------------
     let whitelist: HashSet<&'static str> = WHITE_LIST_AD_DOMAINS.iter().copied().collect();
 
+    // Check if a domain or any of its parent domains are whitelisted.
+    let is_whitelisted = |domain: &str| -> bool {
+        if whitelist.contains(domain) {
+            return true;
+        }
+        let mut h = domain;
+        while let Some(dot) = h.find('.') {
+            h = &h[dot + 1..];
+            if !h.contains('.') {
+                break;
+            }
+            if whitelist.contains(h) {
+                return true;
+            }
+        }
+        false
+    };
+
     // ----------------------------
     // Merge into a single BTreeMap<String, u64> for the unified FST Map.
     // The value is a bitmask of categories.
@@ -527,7 +545,7 @@ fn main() -> BuildResult<()> {
     if include_bad {
         for domain in unique_entries
             .into_iter()
-            .filter(|e| !whitelist.contains(e.as_str()))
+            .filter(|e| !is_whitelisted(e.as_str()))
         {
             *unified.entry(domain).or_insert(0) |= CAT_BAD;
         }
