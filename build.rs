@@ -81,6 +81,7 @@ static WHITE_LIST_AD_DOMAINS: &[&str] = &[
     "framer.ai",
     "framer.website",
     "rt.com",
+    "clickz.com",
 ];
 
 type BuildResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
