@@ -82,6 +82,18 @@ static WHITE_LIST_AD_DOMAINS: &[&str] = &[
     "framer.website",
     "rt.com",
     "clickz.com",
+    "ask.com",
+    "sogou.com",
+    "movavi.com",
+    "bitbucket.io",
+    "codesandbox.io",
+    "godaddysites.com",
+    "ngrok.io",
+    "pythonanywhere.com",
+    "repl.co",
+    "stackblitz.io",
+    "charter.net",
+    "xe.com",
 ];
 
 type BuildResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
