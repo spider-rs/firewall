@@ -1505,7 +1505,7 @@ dependencies = [
 
 [[package]]
 name = "spider_firewall"
-version = "2.35.12"
+version = "2.35.13"
 dependencies = [
  "criterion",
  "fst",
