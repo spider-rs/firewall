@@ -115,7 +115,8 @@ static WHITE_LIST_AD_DOMAINS: &[&str] = &[
     "newrelic.com",
     "sumologic.com",
     "embassysuites.com",
-    "poe.com"
+    "poe.com",
+    "sierraspace.com"
 ];
 
 type BuildResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
