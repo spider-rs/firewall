@@ -108,7 +108,9 @@ static WHITE_LIST_AD_DOMAINS: &[&str] = &[
     "dicksdrivein.com",
     "dickson-constant.com",
     "dicksonone.com",
-    "dickclark.com"
+    "dickclark.com",
+    "salesforce.com",
+    "webmd.com"
 ];
 
 type BuildResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -522,12 +524,13 @@ fn main() -> BuildResult<()> {
     }
 
     // ----------------------------
-    // Stamparm/maltrail — Malware Domains
+    // HaGeZi Threat Intelligence Feeds — Malware/Phishing/Scam Domains
+    // (Replaces the retired stamparm/maltrail aggregated malware/domain.txt.)
     // ----------------------------
     if tier_large && include_bad {
         let body = fetch_text(
             &client,
-            "https://raw.githubusercontent.com/stamparm/maltrail/master/trails/static/malware/domain.txt",
+            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/tif-onlydomains.txt",
         );
         parse_domain_lines(&body, &mut unique_entries);
     }
