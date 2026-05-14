@@ -1,6 +1,6 @@
 [package]
 name = "spider_firewall"
-version = "2.35.19"
+version = "2.35.20"
 authors = [
     "j-mendez <jeff@spider.cloud>"
 ]
