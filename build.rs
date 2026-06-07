@@ -433,6 +433,29 @@ fn main() -> BuildResult<()> {
         parse_domain_lines(&body, &mut unique_entries);
     }
 
+    // ----------------------------
+    // StevenBlack hosts — Porn/Adult aggregate
+    // Hosts-file format; dedups against the base StevenBlack hosts above.
+    // ----------------------------
+    if tier_small && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn/hosts",
+        );
+        parse_hosts_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // malware-filter — Phishing Domains (OpenPhish/IPThreat upstreams)
+    // ----------------------------
+    if tier_small && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://malware-filter.gitlab.io/malware-filter/phishing-filter-hosts.txt",
+        );
+        parse_hosts_lines(&body, &mut unique_entries);
+    }
+
     // ============================================================
     //  MEDIUM tier sources (threat-intelligence hardening)
     // ============================================================
@@ -488,6 +511,17 @@ fn main() -> BuildResult<()> {
         let body = fetch_text(
             &client,
             "https://raw.githubusercontent.com/stamparm/maltrail/master/trails/static/suspicious/domain.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // phishdestroy/destroylist — Primary Active (DNS-verified, MIT)
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/phishdestroy/destroylist/main/rootlist/formats/primary_active/domains.txt",
         );
         parse_domain_lines(&body, &mut unique_entries);
     }

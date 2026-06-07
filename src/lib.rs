@@ -287,6 +287,21 @@ mod tests {
     }
 
     #[test]
+    fn test_adult_websites_blocked() {
+        // Adult/porn coverage from the StevenBlack porn aggregate (CAT_BAD).
+        assert!(is_bad_website_url("pornhub.com"));
+        assert!(is_bad_website_url("xvideos.com"));
+    }
+
+    #[test]
+    fn test_legit_websites_not_false_positive() {
+        // Guard against false positives from the expanded porn/phishing sources.
+        assert!(!is_bad_website_url("github.com"));
+        assert!(!is_bad_website_url("wikipedia.org"));
+        assert!(!is_bad_website_url("google.com"));
+    }
+
+    #[test]
     fn test_define_firewall_macro() {
         define_firewall!("ads", "adwebsite.com", "ad1website.com");
 

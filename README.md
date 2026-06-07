@@ -16,8 +16,8 @@ The `small` tier is enabled by default. Enable `medium` or `large` for broader c
 
 | Tier | FST Size | Focus | Feature Flag |
 |------|----------|-------|--------------|
-| **small** (default) | ~13 MB | Ads, tracking, malware, phishing, scams | `small` |
-| **medium** | ~26 MB | + ransomware, fraud, abuse, threat intel | `medium` |
+| **small** (default) | ~13 MB | Ads, tracking, malware, phishing, scams, adult/porn | `small` |
+| **medium** | ~26 MB | + ransomware, fraud, abuse, threat intel, extended phishing | `medium` |
 | **large** | ~52 MB | + redirect/typosquatting, extended ads/tracking, full URLhaus | `large` |
 
 ```toml
@@ -109,6 +109,8 @@ fn main() {
 | [Block List Project — Phishing](https://github.com/blocklistproject/Lists) | bad | MIT |
 | [Block List Project — Scam](https://github.com/blocklistproject/Lists) | bad | MIT |
 | [URLhaus Filter (domains)](https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-domains.txt) | bad | CC0/MIT |
+| [Steven Black Hosts — Porn](https://github.com/StevenBlack/hosts) | bad (adult/porn) | MIT |
+| [malware-filter — Phishing](https://gitlab.com/malware-filter/phishing-filter) | bad (phishing) | CC0/MIT |
 
 ### Medium (adds)
 
@@ -119,6 +121,7 @@ fn main() {
 | [Block List Project — Abuse](https://github.com/blocklistproject/Lists) | bad | MIT |
 | [Phishing.Database — Active Domains](https://github.com/mitchellkrogza/Phishing.Database) | bad | MIT |
 | [Stamparm/maltrail — Suspicious](https://github.com/stamparm/maltrail) | bad | MIT |
+| [phishdestroy/destroylist — Primary Active](https://github.com/phishdestroy/destroylist) | bad (phishing/scam) | MIT |
 
 ### Large (adds)
 
