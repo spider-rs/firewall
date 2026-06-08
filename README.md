@@ -117,7 +117,12 @@ fn main() {
 ```
 
 The feed is rate-limited (~1 download/day) and revocable, so it is fetched **non-fatally** at build
-time — a failed or rate-limited fetch yields zero ranges rather than breaking the build.
+time — a failed or rate-limited fetch yields zero ranges rather than breaking the build, and emits a
+`cargo:warning` reporting the embedded range count (or that IP blocking is inactive).
+
+For production builds where IP blocking must not silently disable on a rate-limited fetch, set
+`SPIDER_FIREWALL_IP_STRICT=1`: the build then **fails loudly** if the DROP fetch returns zero ranges
+(instead of shipping with IP blocking inactive). Retry once the ~1/day limit resets.
 
 **Attribution:** IP range data is provided by [The Spamhaus Project](https://www.spamhaus.org) under
 the [Spamhaus DROP terms](https://www.spamhaus.org/drop/) (free for any use, attribution required).
