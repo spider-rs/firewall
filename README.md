@@ -44,6 +44,7 @@ Categories can be toggled independently (all enabled by default):
 | `ads` | Advertising domains |
 | `tracking` | Tracking and analytics domains |
 | `gambling` | Gambling domains |
+| `ip` | Known-bad IPv4 network ranges (Spamhaus DROP) — opt-in, see [IP blocking](#ip-blocking) |
 
 ## Usage
 
@@ -94,6 +95,33 @@ fn main() {
     println!("Is blocked: {}", blocked);
 }
 ```
+
+### IP blocking
+
+Enable the opt-in `ip` feature to also block known-bad IPv4 network ranges. The ranges are
+embedded at build time from the [Spamhaus DROP](https://www.spamhaus.org/drop/) list and matched
+via longest-prefix (binary) search. IPv6 currently always returns `false`.
+
+```toml
+spider_firewall = { version = "2.35", features = ["ip"] }
+```
+
+```rust
+use spider_firewall::{is_bad_ip, is_bad_ip_str};
+
+fn main() {
+    assert!(!is_bad_ip("8.8.8.8".parse().unwrap()));   // legitimate hosts are not blocked
+    let blocked = is_bad_ip_str("1.2.3.4");            // convenience: parses the string
+    println!("Is blocked: {}", blocked);
+}
+```
+
+The feed is rate-limited (~1 download/day) and revocable, so it is fetched **non-fatally** at build
+time — a failed or rate-limited fetch yields zero ranges rather than breaking the build.
+
+**Attribution:** IP range data is provided by [The Spamhaus Project](https://www.spamhaus.org) under
+the [Spamhaus DROP terms](https://www.spamhaus.org/drop/) (free for any use, attribution required).
+© The Spamhaus Project.
 
 ## Blocklist Sources
 

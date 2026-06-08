@@ -1,6 +1,6 @@
 [package]
 name = "spider_firewall"
-version = "2.35.21"
+version = "2.35.22"
 authors = [
     "j-mendez <jeff@spider.cloud>"
 ]
@@ -26,6 +26,7 @@ gambling = []
 small = []
 medium = ["small"]
 large = ["medium"]
+ip = []
 rustls = ["reqwest/rustls-tls"]
 default-tls = ["reqwest/default-tls"]
 

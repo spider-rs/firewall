@@ -239,6 +239,60 @@ pub fn is_gambling_website_url_clean(host: &str) -> bool {
         .unwrap_or(false)
 }
 
+// ---------------------------------------------------------------------------
+// IP blocking (feature = "ip")
+//
+// Known-bad IPv4 network ranges sourced from The Spamhaus Project DROP list
+// (https://www.spamhaus.org/drop/), embedded at build time and matched via
+// binary search. Used under the Spamhaus DROP terms (free for any use,
+// attribution required). (c) The Spamhaus Project — https://www.spamhaus.org
+// ---------------------------------------------------------------------------
+#[cfg(feature = "ip")]
+mod ip_block {
+    // Defines `BAD_IP_RANGES_V4: &[(u32, u32)]` — sorted, non-overlapping inclusive ranges.
+    include!(concat!(env!("OUT_DIR"), "/bad_ips.rs"));
+
+    /// True if `ip` falls within any range. `ranges` must be sorted by start and
+    /// non-overlapping (as emitted by build.rs).
+    #[inline]
+    pub(crate) fn ranges_contain(ranges: &[(u32, u32)], ip: u32) -> bool {
+        match ranges.binary_search_by(|&(start, _)| start.cmp(&ip)) {
+            Ok(_) => true,
+            Err(0) => false,
+            Err(i) => {
+                let (start, end) = ranges[i - 1];
+                start <= ip && ip <= end
+            }
+        }
+    }
+
+    #[inline]
+    pub(crate) fn is_bad_ipv4(ip: u32) -> bool {
+        ranges_contain(BAD_IP_RANGES_V4, ip)
+    }
+}
+
+/// Returns true if the IP address falls within a known-bad network range
+/// (e.g. Spamhaus DROP hijacked / cybercrime-leased netblocks).
+///
+/// IPv4 only at the moment; IPv6 addresses always return `false`.
+#[cfg(feature = "ip")]
+pub fn is_bad_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => ip_block::is_bad_ipv4(u32::from(v4)),
+        std::net::IpAddr::V6(_) => false,
+    }
+}
+
+/// Parse `ip` as an IP address and check it against the known-bad ranges.
+/// Returns `false` if the string is not a valid IP address.
+#[cfg(feature = "ip")]
+pub fn is_bad_ip_str(ip: &str) -> bool {
+    ip.parse::<std::net::IpAddr>()
+        .map(is_bad_ip)
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,5 +369,32 @@ mod tests {
         define_firewall!("global", "anotherbadwebsite.com", "chrome:/");
         assert!(is_bad_website_url("anotherbadwebsite.com"));
         assert!(is_bad_website_url("chrome:/"));
+    }
+
+    #[cfg(feature = "ip")]
+    #[test]
+    fn test_ip_ranges_contain() {
+        // 10.0.0.0/24 -> [167772160, 167772415]; 192.168.1.0/30 -> [3232235776, 3232235779]
+        let ranges = &[(167772160u32, 167772415u32), (3232235776u32, 3232235779u32)];
+        assert!(super::ip_block::ranges_contain(ranges, 167772160)); // 10.0.0.0 (start)
+        assert!(super::ip_block::ranges_contain(ranges, 167772415)); // 10.0.0.255 (end)
+        assert!(super::ip_block::ranges_contain(ranges, 167772300)); // inside
+        assert!(!super::ip_block::ranges_contain(ranges, 167772416)); // 10.0.1.0 (just past)
+        assert!(!super::ip_block::ranges_contain(ranges, 167772159)); // 9.255.255.255 (just before)
+        assert!(super::ip_block::ranges_contain(ranges, 3232235778)); // 192.168.1.2 (second range)
+        assert!(!super::ip_block::ranges_contain(ranges, 0)); // below all
+        assert!(!super::ip_block::ranges_contain(ranges, u32::MAX)); // above all
+    }
+
+    #[cfg(feature = "ip")]
+    #[test]
+    fn test_is_bad_ip_str() {
+        // Invalid / non-IP inputs are safe.
+        assert!(!is_bad_ip_str("not-an-ip"));
+        assert!(!is_bad_ip_str(""));
+        // Private space is never in Spamhaus DROP.
+        assert!(!is_bad_ip("10.0.0.1".parse().unwrap()));
+        // IPv6 is currently always false.
+        assert!(!is_bad_ip("::1".parse().unwrap()));
     }
 }
