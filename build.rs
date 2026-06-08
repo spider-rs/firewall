@@ -536,6 +536,19 @@ fn main() -> BuildResult<()> {
         parse_hosts_lines(&body, &mut unique_entries);
     }
 
+    // ----------------------------
+    // NoCoin Filter List — In-browser cryptojacking / JavaScript miners
+    // Hosts-file format; MIT license; ~750 entries; last commit May 2026.
+    // Covers malicious in-browser mining scripts not yet blocked by TIF (LARGE only).
+    // ----------------------------
+    if tier_small && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/hoshsadiq/adblock-nocoin-list/master/hosts.txt",
+        );
+        parse_hosts_lines(&body, &mut unique_entries);
+    }
+
     // ============================================================
     //  MEDIUM tier sources (threat-intelligence hardening)
     // ============================================================
@@ -602,6 +615,20 @@ fn main() -> BuildResult<()> {
         let body = fetch_text(
             &client,
             "https://raw.githubusercontent.com/phishdestroy/destroylist/main/rootlist/formats/primary_active/domains.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // HaGeZi Threat Intelligence Feeds — Mini (Malware/Phishing/Scam/Cryptojacking)
+    // Plain-domain format; MIT license; ~170k entries; updated daily; last seen 2026-06-07.
+    // Fills the TIF coverage gap at MEDIUM tier — the full TIF (~700k) fires at LARGE only.
+    // Entries that overlap with the LARGE-tier full TIF are deduplicated at merge time.
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/tif.mini-onlydomains.txt",
         );
         parse_domain_lines(&body, &mut unique_entries);
     }
