@@ -606,6 +606,31 @@ fn main() -> BuildResult<()> {
         parse_domain_lines(&body, &mut unique_entries);
     }
 
+    // ----------------------------
+    // durablenapkin/scamblocklist — Curated scam & fraud domains (MIT)
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/durablenapkin/scamblocklist/master/hosts.txt",
+        );
+        parse_hosts_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // HaGeZi Threat Intelligence Feeds — Mini tier
+    // Plain-domain format; same GPLv3 as the large-tier TIF; ~169k entries;
+    // updated every 6h. Fills TIF coverage at medium before the full ~700k list
+    // kicks in at large. Overlapping entries are deduplicated at merge time.
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/tif.mini-onlydomains.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
     // ============================================================
     //  LARGE tier sources (comprehensive protection)
     // ============================================================
