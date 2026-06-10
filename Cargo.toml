@@ -16,6 +16,12 @@ edition = "2018"
 [dependencies]
 phf = { version = "0.13", features = ["macros"] }
 fst = "0.4"
+# Runtime "discovered-bad" overlay (feature = "dynamic"). Optional: when the
+# feature is off neither crate is resolved or compiled, so the default build is
+# byte-identical. Both are pure-Rust and cross-platform.
+arc-swap = { version = "1", optional = true }
+crossbeam-queue = { version = "0.3", optional = true }
+foldhash = { version = "0.1", optional = true }
 
 [features]
 default = ["default-tls", "bad", "ads", "tracking", "gambling", "small"]
@@ -27,6 +33,9 @@ small = []
 medium = ["small"]
 large = ["medium"]
 ip = []
+# Lock-free runtime feedback loop: report_bad/seed_dynamic + a TTL'd overlay the
+# read path consults. Opt-in; additive; no behavior change when off.
+dynamic = ["dep:arc-swap", "dep:crossbeam-queue", "dep:foldhash"]
 rustls = ["reqwest/rustls-tls"]
 default-tls = ["reqwest/default-tls"]
 

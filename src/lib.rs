@@ -82,11 +82,48 @@ pub mod firewall {
 
 use std::sync::OnceLock;
 
+/// Runtime "discovered-bad" overlay + feedback funnel. Opt-in via the `dynamic`
+/// feature; when off, none of this compiles and the read path is byte-identical.
+#[cfg(feature = "dynamic")]
+pub mod dynamic;
+
 /// Category bitmask flags — must stay in sync with build.rs.
-const CAT_BAD: u64 = 1;
-const CAT_ADS: u64 = 2;
-const CAT_TRACKING: u64 = 4;
-const CAT_GAMBLING: u64 = 8;
+pub const CAT_BAD: u64 = 1;
+/// Ads category bit.
+pub const CAT_ADS: u64 = 2;
+/// Tracking category bit.
+pub const CAT_TRACKING: u64 = 4;
+/// Gambling category bit.
+pub const CAT_GAMBLING: u64 = 8;
+
+/// Overlay OR-term for a category lookup. Expands to a literal `false` when the
+/// `dynamic` feature is off, so the static read path is byte-identical to before.
+macro_rules! dyn_cat_or {
+    ($host:expr, $cat:expr) => {{
+        #[cfg(feature = "dynamic")]
+        {
+            $crate::dynamic::dynamic_has_category($host, $cat)
+        }
+        #[cfg(not(feature = "dynamic"))]
+        {
+            false
+        }
+    }};
+}
+
+/// Overlay OR-term for an any-category lookup. `false` when the feature is off.
+macro_rules! dyn_any_or {
+    ($host:expr) => {{
+        #[cfg(feature = "dynamic")]
+        {
+            $crate::dynamic::dynamic_contains($host)
+        }
+        #[cfg(not(feature = "dynamic"))]
+        {
+            false
+        }
+    }};
+}
 
 /// Unified FST Map (loaded from bytes generated in build.rs)
 static FIREWALL_MAP: OnceLock<fst::Map<&'static [u8]>> = OnceLock::new();
@@ -140,21 +177,25 @@ pub fn get_host_from_url(url: &str) -> Option<&str> {
 pub fn is_bad_website_url(host: &str) -> bool {
     fst_has_category(host, CAT_BAD)
         || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
+        || dyn_cat_or!(host, CAT_BAD)
 }
 
 pub fn is_ad_website_url(host: &str) -> bool {
     fst_has_category(host, CAT_ADS)
         || is_website_in_custom_set(host, &firewall::GLOBAL_ADS_WEBSITES)
+        || dyn_cat_or!(host, CAT_ADS)
 }
 
 pub fn is_tracking_website_url(host: &str) -> bool {
     fst_has_category(host, CAT_TRACKING)
         || is_website_in_custom_set(host, &firewall::GLOBAL_TRACKING_WEBSITES)
+        || dyn_cat_or!(host, CAT_TRACKING)
 }
 
 pub fn is_gambling_website_url(host: &str) -> bool {
     fst_has_category(host, CAT_GAMBLING)
         || is_website_in_custom_set(host, &firewall::GLOBAL_GAMBLING_WEBSITES)
+        || dyn_cat_or!(host, CAT_GAMBLING)
 }
 
 /// General networking blocking. At the moment you have to build this list yourself with the macro define_firewall!("networking", "a.ping.com").
@@ -162,6 +203,7 @@ pub fn is_networking_url(host: &str) -> bool {
     fst_has_category(host, CAT_BAD)
         || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
         || is_website_in_custom_set(host, &firewall::GLOBAL_NETWORKING_WEBSITES)
+        || dyn_cat_or!(host, CAT_BAD)
 }
 
 /// Determine a generic bad url.
@@ -172,6 +214,7 @@ pub fn is_url_bad(host: &str) -> bool {
         || is_website_in_custom_set(host, &firewall::GLOBAL_NETWORKING_WEBSITES)
         || is_website_in_custom_set(host, &firewall::GLOBAL_TRACKING_WEBSITES)
         || is_website_in_custom_set(host, &firewall::GLOBAL_GAMBLING_WEBSITES)
+        || dyn_any_or!(host)
 }
 
 /// Check if host (or any parent domain) exists in the FST under any category.
