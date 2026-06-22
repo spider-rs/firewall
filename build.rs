@@ -631,6 +631,23 @@ fn main() -> BuildResult<()> {
         parse_domain_lines(&body, &mut unique_entries);
     }
 
+    // ----------------------------
+    // abuse.ch ThreatFox — Malware Domain IOCs (hosts-file format, CC0)
+    // Active malware C2 and distribution domains from the ThreatFox community
+    // IOC platform: covers Cobalt Strike, Emotet, QakBot, njRAT, and many more
+    // families beyond what Feodo Tracker covers. IOCs expire after 6 months.
+    // Generated every 5 min; fetched non-fatally so a transient failure or
+    // rate-limit yields no entries rather than breaking the build.
+    // (c) abuse.ch — https://threatfox.abuse.ch — CC0, any use including commercial.
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text_opt(
+            &client,
+            "https://threatfox.abuse.ch/downloads/hostfile/",
+        );
+        parse_hosts_lines(&body, &mut unique_entries);
+    }
+
     // ============================================================
     //  LARGE tier sources (comprehensive protection)
     // ============================================================
@@ -836,6 +853,25 @@ pub static FIREWALL_FST_BYTES: &[u8] =
     }
 
     // ----------------------------
+    // ThreatFox IOC IPv4 — Broader Malware C2/Distribution IPs (CC0)
+    // Bare-IP list mirrored hourly from abuse.ch ThreatFox IOC platform.
+    // Complements Feodo Tracker (botnet-specific) with a wider set of malware
+    // families (Cobalt Strike C2, Metasploit, njRAT, AsyncRAT, etc.). Gated to
+    // medium tier because the broader scope (vs. confirmed botnet-only Feodo)
+    // carries slightly higher shared-hosting FP risk at very small build sizes.
+    // Non-fatal fetch: a transient failure contributes no entries.
+    // Data: (c) abuse.ch ThreatFox (CC0). Mirror: elliotwutingfeng (BSD-3-Clause).
+    // https://github.com/elliotwutingfeng/ThreatFox-IOC-IPs
+    // ----------------------------
+    if include_ip && tier_medium {
+        let body = fetch_text_opt(
+            &client,
+            "https://raw.githubusercontent.com/elliotwutingfeng/ThreatFox-IOC-IPs/main/ips.txt",
+        );
+        parse_cidr_v4_lines(&body, &mut ip_ranges_v4);
+    }
+
+    // ----------------------------
     // malware-filter / URLhaus filter — Malware-Hosting IPs (CC0 + MIT)
     // IPs from currently-online URLhaus malware-distribution URLs where the URL
     // host is a bare IP address rather than a domain name. Updated 2×/day.
@@ -891,6 +927,10 @@ pub static FIREWALL_FST_BYTES: &[u8] =
          //\n\
          //   abuse.ch Feodo Tracker (https://feodotracker.abuse.ch/) — CC0.\n\
          //   (c) abuse.ch\n\
+         //\n\
+         //   ThreatFox IOC IPv4 addresses [medium tier]\n\
+         //   (https://github.com/elliotwutingfeng/ThreatFox-IOC-IPs) — CC0 (data) + BSD-3-Clause (mirror).\n\
+         //   Data (c) abuse.ch ThreatFox.\n\
          //\n\
          //   malware-filter URLhaus-filter malware-hosting IPs [large tier]\n\
          //   (https://gitlab.com/malware-filter/urlhaus-filter) — CC0 + MIT.\n\
