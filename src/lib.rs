@@ -399,6 +399,18 @@ mod tests {
     }
 
     #[test]
+    fn test_trustpilot_whitelisted() {
+        // trustpilot.com is whitelisted: BlockListProject's phishing/scam lists
+        // include www.trustpilot.com, which is a false positive for a legit
+        // review site. The whitelist walks up parent domains, so the www host
+        // and any subdomain resolve as not-bad.
+        assert!(!is_bad_website_url("trustpilot.com"), "trustpilot.com should be whitelisted");
+        assert!(!is_bad_website_url("www.trustpilot.com"), "www.trustpilot.com should be whitelisted");
+        assert!(!is_bad_website_url_clean("https://www.trustpilot.com/review/grey.co"), "trustpilot review URL should not be bad");
+        assert!(!is_url_bad("www.trustpilot.com"), "trustpilot should not match any bad category");
+    }
+
+    #[test]
     fn test_define_firewall_macro() {
         define_firewall!("ads", "adwebsite.com", "ad1website.com");
 
