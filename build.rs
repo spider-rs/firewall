@@ -7,6 +7,8 @@ use std::env;
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize)]
 struct GithubContent {
@@ -35,41 +37,330 @@ fn github_token() -> Option<String> {
         })
 }
 
+// ============================================================
+//  Resilient fetch layer: timeout + retry/backoff + on-disk cache
+//
+//  Env knobs (each emits `cargo:rerun-if-env-changed` in main()):
+//    SPIDER_FIREWALL_FETCH_TIMEOUT_SECS — per-request connect+total timeout (default 30)
+//    SPIDER_FIREWALL_FETCH_RETRIES     — attempts per URL (default 4)
+//    SPIDER_FIREWALL_CACHE_DIR         — cache dir override (default
+//                                        $CARGO_HOME/spider_firewall-buildcache,
+//                                        falling back to $HOME/.cache/spider_firewall)
+//    SPIDER_FIREWALL_OFFLINE           — 1 ⇒ no network, serve from cache only
+//
+//  Every successful fetch is written through to the cache (atomic temp+rename,
+//  keyed by an FNV-1a hash of the URL). When all retries fail, the cached copy
+//  is served with a warning — so once a box has built successfully, a later
+//  total upstream outage can no longer break the build. Only a genuinely
+//  unrecoverable cold-cache+offline fetch of a FATAL source still panics.
+// ============================================================
+
+/// Read an env var, treating unset/whitespace-only as absent.
+fn env_nonempty(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+/// `SPIDER_FIREWALL_OFFLINE=1` ⇒ skip the network entirely, cache only.
+fn offline() -> bool {
+    env_nonempty("SPIDER_FIREWALL_OFFLINE")
+        .map_or(false, |v| v != "0" && !v.eq_ignore_ascii_case("false"))
+}
+
+fn env_u64(key: &str, default: u64) -> u64 {
+    env_nonempty(key)
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
+/// Attempts per URL (`SPIDER_FIREWALL_FETCH_RETRIES`, default 4, clamped 1..=16).
+fn fetch_retries() -> u32 {
+    env_u64("SPIDER_FIREWALL_FETCH_RETRIES", 4).clamp(1, 16) as u32
+}
+
+/// Per-request connect + total timeout
+/// (`SPIDER_FIREWALL_FETCH_TIMEOUT_SECS`, default 30s, clamped 1..=600).
+fn fetch_timeout() -> Duration {
+    Duration::from_secs(env_u64("SPIDER_FIREWALL_FETCH_TIMEOUT_SECS", 30).clamp(1, 600))
+}
+
+/// Stable FNV-1a 64-bit hash, hex-encoded — cache filename for a URL.
+/// (Inline so we don't add a hashing crate; stable across Rust versions,
+/// unlike `DefaultHasher`.)
+fn fnv1a_hex(s: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in s.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+/// Cache directory, resolved once: `SPIDER_FIREWALL_CACHE_DIR`, else a stable
+/// persistent location that survives `cargo clean` ($CARGO_HOME, falling back
+/// to ~/.cache). Returns `None` (⇒ retry-only, no cache) when no directory can
+/// be resolved or created, rather than failing the build.
+fn cache_dir() -> Option<&'static PathBuf> {
+    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = if let Some(d) = env_nonempty("SPIDER_FIREWALL_CACHE_DIR") {
+            PathBuf::from(d)
+        } else if let Some(cargo_home) = env_nonempty("CARGO_HOME") {
+            PathBuf::from(cargo_home).join("spider_firewall-buildcache")
+        } else if let Some(home) = env_nonempty("HOME") {
+            let cargo_default = PathBuf::from(&home).join(".cargo");
+            if cargo_default.is_dir() {
+                cargo_default.join("spider_firewall-buildcache")
+            } else {
+                PathBuf::from(home).join(".cache").join("spider_firewall")
+            }
+        } else {
+            println!(
+                "cargo:warning=spider_firewall: no cache dir resolvable (SPIDER_FIREWALL_CACHE_DIR/CARGO_HOME/HOME unset) — building without fetch cache"
+            );
+            return None;
+        };
+        match fs::create_dir_all(&dir) {
+            Ok(()) => Some(dir),
+            Err(e) => {
+                println!(
+                    "cargo:warning=spider_firewall: could not create fetch cache dir {}: {e} — building without fetch cache",
+                    dir.display()
+                );
+                None
+            }
+        }
+    })
+    .as_ref()
+}
+
+fn cache_path(url: &str) -> Option<PathBuf> {
+    cache_dir().map(|d| d.join(format!("{}.cache", fnv1a_hex(url))))
+}
+
+/// Read a cached body for `url`, returning it with the path it came from.
+fn cache_read(url: &str) -> Option<(String, PathBuf)> {
+    let path = cache_path(url)?;
+    fs::read_to_string(&path).ok().map(|body| (body, path))
+}
+
+/// Write-through: persist a successfully fetched body atomically
+/// (temp file + rename). Failures degrade to a warning, never an error.
+fn cache_write(url: &str, body: &str) {
+    let path = match cache_path(url) {
+        Some(p) => p,
+        None => return,
+    };
+    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+    if let Err(e) = fs::write(&tmp, body).and_then(|_| fs::rename(&tmp, &path)) {
+        let _ = fs::remove_file(&tmp);
+        println!(
+            "cargo:warning=spider_firewall: failed to write fetch cache {}: {e}",
+            path.display()
+        );
+    }
+}
+
+struct FetchError {
+    status: Option<u16>,
+    msg: String,
+}
+
+/// Transient statuses worth retrying; anything else 4xx-ish fails fast.
+fn is_retryable_status(code: u16) -> bool {
+    matches!(code, 408 | 429 | 500 | 502 | 503 | 504)
+}
+
+/// Exponential backoff (~500ms, 1s, 2s, 4s cap) + 0-250ms jitter derived from
+/// the clock (no `rand` dep). A server `Retry-After` (capped at 30s) wins when
+/// it asks for a longer wait.
+fn backoff_delay(attempt: u32, retry_after: Option<Duration>) -> Duration {
+    let base = Duration::from_millis(500u64 << attempt.saturating_sub(1).min(3));
+    let jitter_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| u64::from(d.subsec_nanos()) % 250)
+        .unwrap_or(0);
+    let delay = base + Duration::from_millis(jitter_ms);
+    match retry_after {
+        Some(ra) => delay.max(ra.min(Duration::from_secs(30))),
+        None => delay,
+    }
+}
+
+/// GET `url` with up to `fetch_retries()` attempts. Retries transport errors
+/// and retryable HTTP statuses (honoring `Retry-After` on 429/503); fails fast
+/// on other non-success statuses. Returns the response body on 2xx.
+fn http_get_with_retry(client: &Client, url: &str, github_api: bool) -> Result<String, FetchError> {
+    let attempts = fetch_retries();
+    let mut last_err = FetchError {
+        status: None,
+        msg: "no fetch attempted".to_string(),
+    };
+    for attempt in 1..=attempts {
+        let mut req = client
+            .get(url)
+            .header("User-Agent", ua_generator::ua::spoof_ua());
+        if github_api {
+            req = req
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28");
+            if let Some(token) = github_token() {
+                req = req.header("Authorization", format!("Bearer {token}"));
+            }
+        }
+        let mut retry_after: Option<Duration> = None;
+        match req.send() {
+            Ok(response) => {
+                let status = response.status();
+                if status.is_success() {
+                    match response.text() {
+                        Ok(body) => return Ok(body),
+                        Err(e) => {
+                            last_err = FetchError {
+                                status: Some(status.as_u16()),
+                                msg: format!("failed to read body: {e}"),
+                            };
+                        }
+                    }
+                } else if is_retryable_status(status.as_u16()) {
+                    retry_after = response
+                        .headers()
+                        .get("Retry-After")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.trim().parse::<u64>().ok())
+                        .map(Duration::from_secs);
+                    last_err = FetchError {
+                        status: Some(status.as_u16()),
+                        msg: format!("HTTP {status}"),
+                    };
+                } else {
+                    // Non-retryable HTTP error (404, 403, ...): retrying won't help.
+                    return Err(FetchError {
+                        status: Some(status.as_u16()),
+                        msg: format!("HTTP {status}"),
+                    });
+                }
+            }
+            Err(e) => {
+                last_err = FetchError {
+                    status: None,
+                    msg: format!("transport error: {e}"),
+                };
+            }
+        }
+        if attempt < attempts {
+            let delay = backoff_delay(attempt, retry_after);
+            println!(
+                "cargo:warning=spider_firewall: fetch attempt {attempt}/{attempts} for {url} failed ({}); retrying in {}ms",
+                last_err.msg,
+                delay.as_millis()
+            );
+            std::thread::sleep(delay);
+        }
+    }
+    Err(last_err)
+}
+
+/// Fetch `url` with retries and write-through caching; fall back to the cached
+/// copy when the network fails (or when offline). `Err` ONLY when the fetch is
+/// unrecoverable AND no cache entry exists — the caller decides whether that is
+/// fatal (`fetch_text`) or degrades to empty (`fetch_text_opt`).
+fn fetch_text_resilient(client: &Client, url: &str) -> Result<String, String> {
+    if offline() {
+        return match cache_read(url) {
+            Some((body, path)) => {
+                println!(
+                    "cargo:warning=spider_firewall: offline mode — using cached copy of {url} ({})",
+                    path.display()
+                );
+                Ok(body)
+            }
+            None => Err(format!(
+                "SPIDER_FIREWALL_OFFLINE is set and no cached copy of {url} exists"
+            )),
+        };
+    }
+    match http_get_with_retry(client, url, false) {
+        Ok(body) => {
+            cache_write(url, &body);
+            Ok(body)
+        }
+        Err(e) => match cache_read(url) {
+            Some((body, path)) => {
+                println!(
+                    "cargo:warning=spider_firewall: using stale cached copy of {url} ({}) after fetch failure",
+                    path.display()
+                );
+                Ok(body)
+            }
+            None => Err(format!(
+                "{} (after {} attempt(s); no cached copy available)",
+                e.msg,
+                fetch_retries()
+            )),
+        },
+    }
+}
+
 /// Fetch a GitHub `contents` API listing as `Vec<GithubContent>`, authenticated
-/// when a token is configured. DEGRADES GRACEFULLY: any failure — transport
-/// error, rate limit, or a non-array error body — emits a `cargo:warning` and
-/// returns an empty listing so that one source is simply skipped, instead of the
+/// when a token is configured, with retry/backoff and a cached-listing fallback.
+/// DEGRADES GRACEFULLY: any unrecoverable failure — transport error, rate
+/// limit, or a non-array error body — emits a `cargo:warning` and returns an
+/// empty listing so that one source is simply skipped, instead of the
 /// `.expect()` panic that used to fail the entire build (every other blocklist
 /// source still loads). With a token set, the happy path is unchanged.
 fn fetch_github_contents(client: &Client, url: &str) -> Vec<GithubContent> {
-    let mut req = client
-        .get(url)
-        .header("User-Agent", ua_generator::ua::spoof_ua())
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28");
-    if let Some(token) = github_token() {
-        req = req.header("Authorization", format!("Bearer {token}"));
-    }
-    let response = match req.send() {
-        Ok(r) => r,
-        Err(e) => {
-            println!(
-                "cargo:warning=spider_firewall: GitHub listing fetch failed for {url}: {e} — skipping this source"
-            );
-            return Vec::new();
+    let parse = |body: &str| serde_json::from_str::<Vec<GithubContent>>(body);
+    if offline() {
+        if let Some((body, path)) = cache_read(url) {
+            if let Ok(contents) = parse(&body) {
+                println!(
+                    "cargo:warning=spider_firewall: offline mode — using cached copy of {url} ({})",
+                    path.display()
+                );
+                return contents;
+            }
         }
-    };
-    let status = response.status();
-    match response.json::<Vec<GithubContent>>() {
-        Ok(contents) => contents,
-        Err(e) => {
-            let hint = if matches!(status.as_u16(), 401 | 403 | 429) {
+        println!(
+            "cargo:warning=spider_firewall: offline mode and no cached GitHub listing for {url} — skipping this source"
+        );
+        return Vec::new();
+    }
+    match http_get_with_retry(client, url, true) {
+        Ok(body) => match parse(&body) {
+            Ok(contents) => {
+                // Only cache a body that parsed as a real listing (never a
+                // rate-limit error object).
+                cache_write(url, &body);
+                contents
+            }
+            Err(e) => {
+                println!(
+                    "cargo:warning=spider_firewall: could not parse GitHub listing {url}: {e} — skipping this source"
+                );
+                Vec::new()
+            }
+        },
+        Err(err) => {
+            if let Some((body, path)) = cache_read(url) {
+                if let Ok(contents) = parse(&body) {
+                    println!(
+                        "cargo:warning=spider_firewall: using stale cached copy of {url} ({}) after fetch failure",
+                        path.display()
+                    );
+                    return contents;
+                }
+            }
+            let hint = if matches!(err.status, Some(401) | Some(403) | Some(429)) {
                 " — GitHub API auth/rate-limit; set GITHUB_TOKEN to raise the limit to 5,000/hr"
             } else {
                 ""
             };
             println!(
-                "cargo:warning=spider_firewall: could not parse GitHub listing {url} (HTTP {status}){hint}: {e} — skipping this source"
+                "cargo:warning=spider_firewall: GitHub listing fetch failed for {url} ({}){hint} — skipping this source",
+                err.msg
             );
             Vec::new()
         }
@@ -289,14 +580,12 @@ static WHITE_LIST_AD_DOMAINS: &[&str] = &[
 
 type BuildResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+/// FATAL fetch with retry + cache fallback: panics ONLY when the network is
+/// unrecoverable after all retries AND there is no cached copy — the genuinely
+/// cold-cache+offline case (the same builds that used to fail on a single blip).
 fn fetch_text(client: &Client, url: &str) -> String {
-    client
-        .get(url)
-        .header("User-Agent", ua_generator::ua::spoof_ua())
-        .send()
-        .unwrap_or_else(|_| panic!("Failed to fetch {}", url))
-        .text()
-        .unwrap_or_else(|_| panic!("Failed to read {}", url))
+    fetch_text_resilient(client, url)
+        .unwrap_or_else(|e| panic!("Failed to fetch {}: {}", url, e))
 }
 
 /// Parse a hosts-format file (e.g. `0.0.0.0 domain` or `127.0.0.1 domain`),
@@ -345,15 +634,10 @@ fn parse_domain_lines(body: &str, out: &mut HashSet<String>) {
 /// Like `fetch_text` but NON-FATAL: returns an empty string on failure instead of
 /// panicking, emitting a `cargo:warning`. Used for feeds that are rate-limited or
 /// revocable (e.g. Spamhaus DROP, ~1 download/day) so a transient fetch failure
-/// cannot break the build — the source simply contributes no entries.
+/// cannot break the build — the source simply contributes no entries. Shares the
+/// same retry + cache-fallback path as `fetch_text`.
 fn fetch_text_opt(client: &Client, url: &str) -> String {
-    match client
-        .get(url)
-        .header("User-Agent", ua_generator::ua::spoof_ua())
-        .send()
-        .and_then(|r| r.error_for_status())
-        .and_then(|r| r.text())
-    {
+    match fetch_text_resilient(client, url) {
         Ok(body) => body,
         Err(e) => {
             println!(
@@ -423,7 +707,19 @@ fn merge_ranges(mut ranges: Vec<(u32, u32)>) -> Vec<(u32, u32)> {
 }
 
 fn main() -> BuildResult<()> {
-    let client = Client::new();
+    println!("cargo:rerun-if-env-changed=SPIDER_FIREWALL_OFFLINE");
+    println!("cargo:rerun-if-env-changed=SPIDER_FIREWALL_CACHE_DIR");
+    println!("cargo:rerun-if-env-changed=SPIDER_FIREWALL_FETCH_RETRIES");
+    println!("cargo:rerun-if-env-changed=SPIDER_FIREWALL_FETCH_TIMEOUT_SECS");
+
+    // Per-request connect + total timeout so a hung upstream connection can
+    // never block the build indefinitely.
+    let timeout = fetch_timeout();
+    let client = Client::builder()
+        .timeout(timeout)
+        .connect_timeout(timeout)
+        .build()
+        .expect("spider_firewall: failed to build HTTP client");
 
     // Category flags
     let include_bad = env::var("CARGO_FEATURE_BAD").is_ok();
@@ -494,11 +790,7 @@ fn main() -> BuildResult<()> {
                 "https://raw.githubusercontent.com/ShadowWhisperer/BlockLists/master/{}",
                 item.path
             );
-            let file_response = client
-                .get(&file_url)
-                .send()
-                .expect("Failed to fetch file content");
-            let file_content = file_response.text().expect("Failed to read file content");
+            let file_content = fetch_text(&client, &file_url);
 
             if is_tracking {
                 for line in file_content.lines() {
@@ -559,11 +851,7 @@ fn main() -> BuildResult<()> {
                 "https://raw.githubusercontent.com/badmojr/1Hosts/master/{}",
                 item.path
             );
-            let file_response = client
-                .get(&file_url)
-                .send()
-                .expect("Failed to fetch file content");
-            let file_content = file_response.text().expect("Failed to read file content");
+            let file_content = fetch_text(&client, &file_url);
 
             if want_domains {
                 for line in file_content.lines().skip(15) {
@@ -595,14 +883,7 @@ fn main() -> BuildResult<()> {
     if need_spider {
         let additional_url =
             "https://raw.githubusercontent.com/spider-rs/bad_websites/main/websites.txt";
-        let response = client
-            .get(additional_url)
-            .send()
-            .expect("Failed to fetch additional file");
-
-        let additional_content = response
-            .text()
-            .expect("Failed to read additional file content");
+        let additional_content = fetch_text(&client, additional_url);
 
         for line in additional_content.lines() {
             let entry = line.trim_matches(|c| c == '"' || c == ',').trim();

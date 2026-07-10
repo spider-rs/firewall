@@ -1523,7 +1523,7 @@ dependencies = [
 
 [[package]]
 name = "spider_firewall"
-version = "2.36.1"
+version = "2.36.3"
 dependencies = [
  "arc-swap",
  "criterion",
