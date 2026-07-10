@@ -16,6 +16,66 @@ struct GithubContent {
     content_type: String,
 }
 
+/// Optional GitHub token for authenticated GitHub API calls. Authenticated
+/// requests get 5,000 req/hr vs. 60/hr unauthenticated — the unauthenticated
+/// budget is what makes a clean build of the `dynamic` feature flaky: the
+/// directory-listing calls below burn through 60/hr and GitHub then returns a
+/// JSON error *object* where an array is expected, panicking the build. Checked
+/// in priority order; unset/empty ⇒ unauthenticated. Set `GITHUB_TOKEN` in CI /
+/// the Docker build to make dynamic builds reliable.
+fn github_token() -> Option<String> {
+    ["GITHUB_TOKEN", "GH_TOKEN", "SPIDER_FIREWALL_GITHUB_TOKEN"]
+        .iter()
+        .copied()
+        .find_map(|k| {
+            env::var(k)
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        })
+}
+
+/// Fetch a GitHub `contents` API listing as `Vec<GithubContent>`, authenticated
+/// when a token is configured. DEGRADES GRACEFULLY: any failure — transport
+/// error, rate limit, or a non-array error body — emits a `cargo:warning` and
+/// returns an empty listing so that one source is simply skipped, instead of the
+/// `.expect()` panic that used to fail the entire build (every other blocklist
+/// source still loads). With a token set, the happy path is unchanged.
+fn fetch_github_contents(client: &Client, url: &str) -> Vec<GithubContent> {
+    let mut req = client
+        .get(url)
+        .header("User-Agent", ua_generator::ua::spoof_ua())
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28");
+    if let Some(token) = github_token() {
+        req = req.header("Authorization", format!("Bearer {token}"));
+    }
+    let response = match req.send() {
+        Ok(r) => r,
+        Err(e) => {
+            println!(
+                "cargo:warning=spider_firewall: GitHub listing fetch failed for {url}: {e} — skipping this source"
+            );
+            return Vec::new();
+        }
+    };
+    let status = response.status();
+    match response.json::<Vec<GithubContent>>() {
+        Ok(contents) => contents,
+        Err(e) => {
+            let hint = if matches!(status.as_u16(), 401 | 403 | 429) {
+                " — GitHub API auth/rate-limit; set GITHUB_TOKEN to raise the limit to 5,000/hr"
+            } else {
+                ""
+            };
+            println!(
+                "cargo:warning=spider_firewall: could not parse GitHub listing {url} (HTTP {status}){hint}: {e} — skipping this source"
+            );
+            Vec::new()
+        }
+    }
+}
+
 /// Category bitmask flags — must stay in sync with lib.rs.
 const CAT_BAD: u64 = 1;
 const CAT_ADS: u64 = 2;
@@ -395,14 +455,7 @@ fn main() -> BuildResult<()> {
     // ----------------------------
     if need_shadow {
         let base_url = "https://api.github.com/repos/ShadowWhisperer/BlockLists/contents/RAW";
-        let response = client
-            .get(base_url)
-            .header("User-Agent", ua_generator::ua::spoof_ua())
-            .send()
-            .expect("Failed to fetch directory listing");
-
-        let contents: Vec<GithubContent> =
-            response.json().expect("Failed to parse JSON response");
+        let contents = fetch_github_contents(&client, base_url);
 
         let skip_list = vec![
             "Cryptocurrency",
@@ -484,14 +537,7 @@ fn main() -> BuildResult<()> {
     // ----------------------------
     if need_1hosts {
         let base_url = "https://api.github.com/repos/badmojr/1Hosts/contents/Lite/";
-        let response = client
-            .get(base_url)
-            .header("User-Agent", ua_generator::ua::spoof_ua())
-            .send()
-            .expect("Failed to fetch directory listing");
-
-        let contents: Vec<GithubContent> =
-            response.json().expect("Failed to parse JSON response");
+        let contents = fetch_github_contents(&client, base_url);
         let skip_list = vec!["rpz", "domains.wildcards", "wildcards", "unbound.conf"];
 
         for item in contents {
