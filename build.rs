@@ -971,6 +971,21 @@ fn main() -> BuildResult<()> {
         parse_hosts_lines(&body, &mut unique_entries);
     }
 
+    // ----------------------------
+    // CyberHost — Malware & C2 Domains (CC BY-SA 4.0; commercial use permitted)
+    // ~22k curated, verified malware-distribution and C2 domains; NOT an ad or
+    // tracker list. Provenance comment lines (# ...) are stripped by
+    // parse_domain_lines. Updated every 1–6 hours. Attribution: CyberHost
+    // (https://cyberhost.uk/malware-blocklist/).
+    // ----------------------------
+    if tier_small && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://lists.cyberhost.uk/malware.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
     // ============================================================
     //  MEDIUM tier sources (threat-intelligence hardening)
     // ============================================================
@@ -1081,6 +1096,37 @@ fn main() -> BuildResult<()> {
             "https://threatfox.abuse.ch/downloads/hostfile/",
         );
         parse_hosts_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // CERT Polska Warning List v2 — Phishing & Malware Domains (open data)
+    // Poland's national CERT (NASK/CERT.PL) verified phishing and malware
+    // delivery domains. Data policy: "may be accessed, used and processed
+    // without obtaining special permission or license." ~85k–130k domains;
+    // 6-month rolling retention. Hosts-file format (0.0.0.0 domain).
+    // https://hole.cert.pl/domains/v2/ — tooling BSD-3-Clause.
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://hole.cert.pl/domains/v2/domains_hosts.txt",
+        );
+        parse_hosts_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // PhishIndex — Active Phishing & Malware Domains (MIT)
+    // Automated 2-hour pipeline; focused on crypto/Web3 credential-harvesting
+    // phishing (MetaMask, Ledger, Kraken impersonation) and malware delivery.
+    // ~3k–5k entries; plain domain list, one FQDN per line.
+    // https://github.com/PhishIndex/phishindex-blocklist
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/PhishIndex/phishindex-blocklist/main/Data/Malicious%20Domains/txt/all_domains.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
     }
 
     // ============================================================
@@ -1288,6 +1334,22 @@ pub static FIREWALL_FST_BYTES: &[u8] =
     }
 
     // ----------------------------
+    // Emerging Threats — Compromised Host IPv4 (BSD)
+    // Small (~500 IPs), high-confidence list of confirmed compromised machines
+    // actively involved in attacks — first-party Proofpoint ET Labs sensor data,
+    // NOT an aggregation of Spamhaus/DShield. Updated every 12 hours. Non-fatal
+    // fetch. (c) Proofpoint Emerging Threats — BSD license, commercial use permitted.
+    // https://rules.emergingthreats.net/blockrules/compromised-ips.txt
+    // ----------------------------
+    if include_ip {
+        let body = fetch_text_opt(
+            &client,
+            "https://rules.emergingthreats.net/blockrules/compromised-ips.txt",
+        );
+        parse_cidr_v4_lines(&body, &mut ip_ranges_v4);
+    }
+
+    // ----------------------------
     // ThreatFox IOC IPv4 — Broader Malware C2/Distribution IPs (CC0)
     // Bare-IP list mirrored hourly from abuse.ch ThreatFox IOC platform.
     // Complements Feodo Tracker (botnet-specific) with a wider set of malware
@@ -1362,6 +1424,10 @@ pub static FIREWALL_FST_BYTES: &[u8] =
          //\n\
          //   abuse.ch Feodo Tracker (https://feodotracker.abuse.ch/) — CC0.\n\
          //   (c) abuse.ch\n\
+         //\n\
+         //   Proofpoint Emerging Threats — Compromised Host IPs\n\
+         //   (https://rules.emergingthreats.net/blockrules/compromised-ips.txt) — BSD.\n\
+         //   (c) Proofpoint, Inc.\n\
          //\n\
          //   ThreatFox IOC IPv4 addresses [medium tier]\n\
          //   (https://github.com/elliotwutingfeng/ThreatFox-IOC-IPs) — CC0 (data) + BSD-3-Clause (mirror).\n\
