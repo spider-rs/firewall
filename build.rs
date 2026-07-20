@@ -631,6 +631,30 @@ fn parse_domain_lines(body: &str, out: &mut HashSet<String>) {
     }
 }
 
+/// Parse a URL list (one URL per line), extracting the hostname from each URL.
+/// Handles `http://` and `https://` schemes; strips port, path, query, and fragment.
+fn parse_url_domain_lines(body: &str, out: &mut HashSet<String>) {
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let rest = trimmed
+            .strip_prefix("https://")
+            .or_else(|| trimmed.strip_prefix("http://"))
+            .unwrap_or(trimmed);
+        let host = rest.split(['/', '?', '#']).next().unwrap_or("").trim();
+        // Strip port suffix when present (e.g. `example.com:8080` → `example.com`).
+        let host = match host.rsplit_once(':') {
+            Some((h, port)) if port.chars().all(|c| c.is_ascii_digit()) => h,
+            _ => host,
+        };
+        if !host.is_empty() && host.contains('.') {
+            out.insert(host.to_string());
+        }
+    }
+}
+
 /// Like `fetch_text` but NON-FATAL: returns an empty string on failure instead of
 /// panicking, emitting a `cargo:warning`. Used for feeds that are rate-limited or
 /// revocable (e.g. Spamhaus DROP, ~1 download/day) so a transient fetch failure
@@ -986,6 +1010,23 @@ fn main() -> BuildResult<()> {
         parse_domain_lines(&body, &mut unique_entries);
     }
 
+    // ----------------------------
+    // romainmarcoux/malicious-domains — Tier A (highest-confidence, MIT)
+    // ~60 k phishing and malware domains, sorted by cross-feed occurrence frequency;
+    // entries that appear on more source feeds are bucketed into `aa.txt` first.
+    // Top-1 M most-visited domains (Cisco Umbrella + Cloudflare popularity lists)
+    // are pre-filtered upstream, significantly reducing false-positive risk.
+    // MIT license. Updated hourly via automated GitHub Actions.
+    // https://github.com/romainmarcoux/malicious-domains
+    // ----------------------------
+    if tier_small && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/romainmarcoux/malicious-domains/main/full-domains-aa.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
     // ============================================================
     //  MEDIUM tier sources (threat-intelligence hardening)
     // ============================================================
@@ -1127,6 +1168,43 @@ fn main() -> BuildResult<()> {
             "https://raw.githubusercontent.com/PhishIndex/phishindex-blocklist/main/Data/Malicious%20Domains/txt/all_domains.txt",
         );
         parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // romainmarcoux/malicious-domains — Tiers B & C (MIT)
+    // Additional ~120 k phishing and malware domains from the lower-frequency
+    // occurrence buckets of the same pipeline (files `ab` and `ac`). The same
+    // top-1 M popularity whitelist is applied upstream. Gated to medium because
+    // these entries appear in fewer source feeds than the tier-A set, carrying
+    // slightly higher false-positive risk.
+    // https://github.com/romainmarcoux/malicious-domains
+    // ----------------------------
+    if tier_medium && include_bad {
+        for part in &["ab", "ac"] {
+            let url = format!(
+                "https://raw.githubusercontent.com/romainmarcoux/malicious-domains/main/full-domains-{}.txt",
+                part
+            );
+            let body = fetch_text(&client, &url);
+            parse_domain_lines(&body, &mut unique_entries);
+        }
+    }
+
+    // ----------------------------
+    // phishunt.io — Active Phishing URL Feed (CC0 1.0)
+    // 24-hour rolling window of verified active phishing URLs targeting 680+
+    // brand targets. The full URL per line is parsed by `parse_url_domain_lines`
+    // to extract the hostname. Detection pipeline runs hourly; active sites are
+    // re-checked every 6 hours. CC0 — any use including commercial, no attribution
+    // required. Fetched non-fatally: a transient failure contributes no entries.
+    // https://phishunt.io/api/
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text_opt(
+            &client,
+            "https://phishunt.io/feed.txt",
+        );
+        parse_url_domain_lines(&body, &mut unique_entries);
     }
 
     // ============================================================
