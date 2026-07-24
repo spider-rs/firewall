@@ -411,6 +411,19 @@ mod tests {
     }
 
     #[test]
+    fn test_usask_whitelisted() {
+        // University of Saskatchewan is a legit institution swept into aggressive
+        // phishing/scam feeds. The parent domain usask.ca is whitelisted, so the
+        // apex and every subdomain (walked up to the parent) resolve as not-bad.
+        assert!(!is_bad_website_url("usask.ca"), "usask.ca should be whitelisted");
+        assert!(!is_bad_website_url("admissions.usask.ca"), "admissions.usask.ca should be whitelisted");
+        assert!(!is_bad_website_url("medicine.usask.ca"), "medicine.usask.ca should be whitelisted");
+        assert!(!is_url_bad("admissions.usask.ca"), "admissions.usask.ca should not match any bad category");
+        assert!(!is_url_bad("medicine.usask.ca"), "medicine.usask.ca should not match any bad category");
+        assert!(!is_bad_website_url_clean("https://admissions.usask.ca/programs"), "usask admissions URL should not be bad");
+    }
+
+    #[test]
     fn test_define_firewall_macro() {
         define_firewall!("ads", "adwebsite.com", "ad1website.com");
 
