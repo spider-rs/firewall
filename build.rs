@@ -567,6 +567,11 @@ static WHITE_LIST_AD_DOMAINS: &[&str] = &[
     "hikvision.com",
     // -- Education / government / nonprofit / reference
     "vam.ac.uk",
+    // University of Saskatchewan — valid public DNS/TLS, hosts official
+    // admissions content. Swept into aggressive phishing/scam feeds as a false
+    // positive. Parent domain covers admissions.usask.ca, medicine.usask.ca,
+    // and any other subdomain via the parent-domain walk.
+    "usask.ca",
     "ipbes.net",
     "constitution.org",
     // -- Reputable news / media
