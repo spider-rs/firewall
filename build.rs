@@ -1129,6 +1129,28 @@ fn main() -> BuildResult<()> {
         parse_domain_lines(&body, &mut unique_entries);
     }
 
+    // ----------------------------
+    // OISD Small — Curated Multi-Category Blocklist (data: MIT per file header)
+    // ~56k domains covering malware, phishing, ads, and tracking with an explicit
+    // "Block. Don't break." false-positive review loop. Entries have been manually
+    // vetted before inclusion; the "Small" tier is the conservative, low-FP
+    // variant of the larger OISD Big list (~335k). Wildcards are implicit
+    // (example.com blocks sub.example.com too — handled by the parent-pruning
+    // pass below). Updated hourly. Fetched via GitHub mirror because
+    // big.oisd.nl / small.oisd.nl return 403 to non-browser user agents.
+    // Maintainer: Stephan van Ruth (https://oisd.nl).
+    // NOTE: the repository's LICENSE file is GPL v3; the list file header
+    // declares MIT for the data. Widely deployed commercially (Pi-hole, AdGuard
+    // Home). Crate maintainers should verify data-vs-code license scope.
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/sjhgvr/oisd/main/domainswild2_small.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
     // ============================================================
     //  LARGE tier sources (comprehensive protection)
     // ============================================================
@@ -1384,6 +1406,26 @@ pub static FIREWALL_FST_BYTES: &[u8] =
         parse_cidr_v4_lines(&body, &mut ip_ranges_v4);
     }
 
+    // ----------------------------
+    // stamparm/ipsum — High-Confidence Malicious IPv4 Addresses, Level 3 (The Unlicense / Public Domain)
+    // Aggregates 30+ public threat-intelligence feeds; "Level 3" means each IP
+    // appears on at least 3 distinct independent lists (~4.7k bare IPs). Bare IPs
+    // are parsed as /32 by cidr_v4_to_range. Updated daily. Gated to large tier
+    // due to the broader aggregation scope: at level 3 a small fraction of
+    // internet research scanner IPs (Shodan 80.82.77.0/23, Censys 167.94.x.x)
+    // may appear, though these are non-issues for outbound crawler blocking
+    // because scanner ranges do not serve web content. Non-fatal fetch.
+    // (c) stamparm — The Unlicense (public domain, any commercial use permitted).
+    // https://github.com/stamparm/ipsum
+    // ----------------------------
+    if include_ip && tier_large {
+        let body = fetch_text_opt(
+            &client,
+            "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/3.txt",
+        );
+        parse_cidr_v4_lines(&body, &mut ip_ranges_v4);
+    }
+
     let ip_ranges_v4 = merge_ranges(ip_ranges_v4);
 
     // Rate-limit / revocation safety. All IP sources are fetched non-fatally; a
@@ -1435,6 +1477,10 @@ pub static FIREWALL_FST_BYTES: &[u8] =
          //\n\
          //   malware-filter URLhaus-filter malware-hosting IPs [large tier]\n\
          //   (https://gitlab.com/malware-filter/urlhaus-filter) — CC0 + MIT.\n\
+         //\n\
+         //   stamparm/ipsum Level-3 IPs (≥3 independent feeds) [large tier]\n\
+         //   (https://github.com/stamparm/ipsum) — The Unlicense (public domain).\n\
+         //   (c) stamparm\n\
          pub static BAD_IP_RANGES_V4: &[(u32, u32)] = &[\n",
     );
     for (s, e) in &ip_ranges_v4 {
