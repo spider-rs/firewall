@@ -580,8 +580,80 @@ static WHITE_LIST_AD_DOMAINS: &[&str] = &[
     "ekstrabladet.dk",
     "phnompenhpost.com",
     "atimes.com",
-    "kinopoisk.ru"
+    "kinopoisk.ru",
+    // -- AI / LLM vendors, all flagged CAT_BAD by upstream feeds
+    //
+    // Every one of these is a well-known company with a public product, and the
+    // feeds classify them as malicious, most likely because new AI domains get
+    // swept up in "newly registered / suspicious" heuristics. They are not in
+    // the ads or tracking lists, so whitelisting them affects only the bad-site
+    // gate and cannot weaken subresource blocking.
+    "openai.com",
+    "chatgpt.com",
+    "anthropic.com",
+    "claude.ai",
+    "huggingface.co",
+    "ollama.com",
+    "perplexity.ai", // covers labs.perplexity.ai via the parent walk
+    "stability.ai",
+    "meta.ai",
+    "openrouter.ai",
+    "genspark.ai",
+    "abacus.ai",
+    // -- Error monitoring, observability and product analytics
+    //
+    // Filed under ads or tracking, but none of them sell advertising. They are
+    // developer tools, and the catalog documents them as scrape targets in
+    // their own right.
+    "honeycomb.io",
+    "instana.io",
+    "honeybadger.io",
+    "raygun.io",
+    "airbrake.io",
+    "backtrace.io",
+    "canny.io",
+    "plausible.io", // privacy-first analytics, explicitly cookie-free
+    "ipinfo.io",
+    "ipgeolocation.io",
+    // -- Ordinary businesses swept in
+    //
+    // cafepress.com is a print-on-demand storefront and mediavine.com is an ad
+    // network's own corporate site. Both were refused outright with the
+    // "Malicious URL not allowed" error while being plainly legitimate.
+    "cafepress.com",
+    "mediavine.com",
+    // AdGuard's other domain. adguard.com is whitelisted a few lines up, so
+    // blocking adguard.io was never a decision, just an inconsistency.
+    "adguard.io",
+    // -- AI products, same false-positive pattern as the vendors above
+    "seaart.ai",
+    "sider.ai",
+    "pixverse.ai",
+    "pixelcut.ai",
+    "polyspeak.ai",
+    "paradox.ai",
+    "forethought.ai",
+    // -- Game studios. Destination websites, not ad or telemetry endpoints.
+    "scopely.io",
+    "saygames.io",
+    "voodoo-tech.io",
+    "voodoo-gaming.io"
 ];
+// Deliberately NOT whitelisted, so the reasoning is not relitigated each time:
+//
+//   use-application-dns.net  Firefox's DoH canary. Answering it is meaningful;
+//                            blocking it is correct.
+//   sslip.io, dedyn.io,      Wildcard and dynamic DNS. Legitimately operated and
+//   p-n.io, ip-ptr.tech      routinely abused to host phishing on throwaway
+//                            hostnames. The feeds are not wrong here.
+//   packetstream.io          Residential bandwidth resale, i.e. the thing our own
+//                            abuse defenses exist to keep out.
+//   short.io                 URL shortener. Same redirect-laundering problem.
+//   1rx.io, bidr.io,         Real-time bidding and ad delivery endpoints. These
+//   presage.io, adnami.io,   are exactly the subresources the crawler should keep
+//   connectad.io, lytics.io  blocking mid-crawl.
+//   fpjs.io, kameleoon.io,   Fingerprinting, A/B testing and paywall beacons.
+//   piano.io, smooch.io      Whitelisting them would unblock the beacon too.
 
 type BuildResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -1214,8 +1286,19 @@ fn main() -> BuildResult<()> {
     }
 
     // ----------------------------
-    // Apply whitelist to BAD only
+    // Apply the whitelist to every category, not only BAD
     // ----------------------------
+    // It used to filter BAD alone, which made false positives in the ads,
+    // tracking and gambling feeds unfixable: adding the domain here changed
+    // nothing, because the filter never ran over those entries. `is_url_bad`
+    // ORs all five categories together, so one stray ads-feed entry still
+    // refused the URL outright and there was no supported way to correct it.
+    //
+    // Note the reach: this filter runs while the FST is built, so a whitelisted
+    // domain stops being blocked for every consumer, including subresource
+    // blocking mid-crawl. Whitelisting a genuine beacon endpoint therefore also
+    // stops that beacon being blocked on unrelated pages. Prefer entries that
+    // are destination websites rather than telemetry endpoints.
     let whitelist: HashSet<&'static str> = WHITE_LIST_AD_DOMAINS.iter().copied().collect();
 
     // Check if a domain or any of its parent domains are whitelisted.
@@ -1253,19 +1336,31 @@ fn main() -> BuildResult<()> {
     }
 
     if include_ads {
-        for domain in unique_ads_entries {
+        for domain in unique_ads_entries
+            .into_iter()
+            .filter(|e| !is_whitelisted(e.as_str()))
+        {
             *unified.entry(domain).or_insert(0) |= CAT_ADS;
         }
     }
 
     if include_tracking {
-        for domain in unique_tracking_entries {
+        for domain in unique_tracking_entries
+            .into_iter()
+            .filter(|e| !is_whitelisted(e.as_str()))
+        {
             *unified.entry(domain).or_insert(0) |= CAT_TRACKING;
         }
     }
 
+    // Gambling is filtered for consistency, but nothing gambling-related is on
+    // the whitelist: blocking that category is deliberate policy, and the
+    // regulated operators and state lotteries in it stay blocked on purpose.
     if include_gambling {
-        for domain in unique_gambling_entries {
+        for domain in unique_gambling_entries
+            .into_iter()
+            .filter(|e| !is_whitelisted(e.as_str()))
+        {
             *unified.entry(domain).or_insert(0) |= CAT_GAMBLING;
         }
     }

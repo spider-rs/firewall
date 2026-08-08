@@ -424,6 +424,99 @@ mod tests {
     }
 
     #[test]
+    fn test_ai_vendors_whitelisted() {
+        // Upstream feeds classify the major AI vendors as malicious, most likely
+        // because recently registered AI domains trip "suspicious new domain"
+        // heuristics. is_url_bad gates /scrape and /crawl, so this made every one
+        // of them permanently uncrawlable.
+        for host in [
+            "openai.com",
+            "chatgpt.com",
+            "anthropic.com",
+            "claude.ai",
+            "huggingface.co",
+            "ollama.com",
+            "perplexity.ai",
+            "labs.perplexity.ai", // parent-domain walk
+            "stability.ai",
+            "meta.ai",
+            "openrouter.ai",
+        ] {
+            assert!(!is_bad_website_url(host), "{host} should be whitelisted");
+            assert!(!is_url_bad(host), "{host} should not match any bad category");
+        }
+        assert!(
+            !is_bad_website_url_clean("https://platform.openai.com/docs/api-reference"),
+            "openai docs URL should not be bad"
+        );
+    }
+
+    #[test]
+    fn test_developer_tools_whitelisted_across_categories() {
+        // These sat in the ads and tracking feeds rather than the bad-site feed,
+        // so while the whitelist was applied to BAD only, adding them here had no
+        // effect whatsoever. This test fails if that regresses: it asserts on
+        // is_url_bad, which ORs ads and tracking in.
+        for host in [
+            "honeycomb.io",
+            "instana.io",
+            "honeybadger.io",
+            "raygun.io",
+            "airbrake.io",
+            "backtrace.io",
+            "canny.io",
+            "plausible.io",
+            "ipinfo.io",
+            "ipgeolocation.io",
+        ] {
+            assert!(!is_url_bad(host), "{host} should not be refused by any category");
+        }
+        assert!(!is_ad_website_url("plausible.io"), "plausible.io is not an ad network");
+        assert!(!is_tracking_website_url("honeycomb.io"), "honeycomb.io is observability, not tracking");
+    }
+
+    #[test]
+    fn test_gambling_still_blocked() {
+        // Whitelisting was extended to gambling for consistency, but nothing
+        // gambling-related is whitelisted, so the category must still bite.
+        // State lotteries and licensed operators stay blocked on purpose.
+        assert!(is_url_bad("calottery.com"), "gambling must remain blocked");
+        assert!(is_url_bad("bet9ja.com"), "gambling must remain blocked");
+    }
+
+    #[test]
+    fn test_known_bad_still_blocked() {
+        // Guards against the whitelist being widened until it stops meaning
+        // anything. These are exactly the domain-generation-algorithm shapes the
+        // firewall exists to catch.
+        for host in ["buffooncountabletreble.com", "backspinreentryupright.com"] {
+            assert!(is_url_bad(host), "{host} must stay blocked");
+        }
+    }
+
+    #[test]
+    fn test_abuse_prone_infrastructure_still_blocked() {
+        // These are left blocked on purpose, with reasons listed next to the
+        // whitelist in build.rs. They are easy to mistake for false positives
+        // later because the companies behind them are legitimate, so pin them:
+        // wildcard/dynamic DNS and shorteners launder phishing, and
+        // packetstream resells residential bandwidth.
+        for host in ["use-application-dns.net", "sslip.io", "packetstream.io", "short.io"] {
+            assert!(is_url_bad(host), "{host} must stay blocked");
+        }
+    }
+
+    #[test]
+    fn test_ad_and_beacon_endpoints_still_blocked() {
+        // Whitelisting reaches subresource blocking too, so real-time bidding and
+        // fingerprinting endpoints stay blocked on purpose even though each is
+        // run by a real company.
+        for host in ["1rx.io", "bidr.io", "fpjs.io", "kameleoon.io"] {
+            assert!(is_url_bad(host), "{host} must stay blocked");
+        }
+    }
+
+    #[test]
     fn test_define_firewall_macro() {
         define_firewall!("ads", "adwebsite.com", "ad1website.com");
 
