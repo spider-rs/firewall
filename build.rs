@@ -1319,6 +1319,46 @@ fn main() -> BuildResult<()> {
         parse_url_domain_lines(&body, &mut unique_entries);
     }
 
+    // ----------------------------
+    // GlobalAntiScamOrg — Verified Scam Domain Feed (BSD-3-Clause)
+    // Curated list of verified scam URLs published by GlobalAntiScamOrg.org, an
+    // established international anti-fraud nonprofit. Covers fake investment
+    // platforms, crypto scam portals, romance scam sites, and counterfeit shops.
+    // Format is a mixed domain/URL-path list (no scheme prefix); parsed by
+    // parse_url_domain_lines which correctly strips any path component. ~10k
+    // entries; updated daily via GitHub Actions. BSD-3-Clause mirror maintained
+    // by elliotwutingfeng; underlying data from GlobalAntiScamOrg.org.
+    // FP risk: LOW — verified by a dedicated anti-scam organization; specifically
+    // targeted fraud sites, not CDN/cloud infrastructure.
+    // https://github.com/elliotwutingfeng/GlobalAntiScamOrg-blocklist
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/elliotwutingfeng/GlobalAntiScamOrg-blocklist/main/global-anti-scam-org-scam-urls.txt",
+        );
+        parse_url_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
+    // USOM/TR-CERT — Turkey National CERT Malicious Domain Feed (BSD-3-Clause)
+    // Malicious domains compiled daily from Turkey's Cyber Security Directorate
+    // (USOM — ulusal-siber-guvenlik.gov.tr), covering phishing, malware C2, and
+    // scam infrastructure. Plain domain list; ~25k verified entries. Provides
+    // geographic/linguistic threat coverage complementary to CERT Polska (already
+    // at medium). Dead domains are pruned automatically. BSD-3-Clause mirror by
+    // elliotwutingfeng. FP risk: LOW-MEDIUM — CERT-verified, though Turkey-focused
+    // feeds occasionally include region-specific hosting entries.
+    // https://github.com/elliotwutingfeng/USOM-Blocklists
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/elliotwutingfeng/USOM-Blocklists/main/urls.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
     // ============================================================
     //  LARGE tier sources (comprehensive protection)
     // ============================================================
@@ -1582,6 +1622,25 @@ pub static FIREWALL_FST_BYTES: &[u8] =
     }
 
     // ----------------------------
+    // USOM/TR-CERT — Turkey CERT Malicious IPv4 Feed (BSD-3-Clause)
+    // Bare IPv4 addresses of malicious hosts confirmed by Turkey's Cyber Security
+    // Directorate (USOM). ~3.5k individual /32 entries; updated daily. Provides
+    // CERT-verified coverage complementary to Feodo (botnet C2) and ThreatFox
+    // (broader malware families). Non-fatal fetch: a transient failure contributes
+    // no entries rather than breaking the build. FP risk: LOW — individual /32
+    // entries from a national CERT carry negligible cloud/CDN over-block risk.
+    // BSD-3-Clause mirror by elliotwutingfeng.
+    // https://github.com/elliotwutingfeng/USOM-Blocklists
+    // ----------------------------
+    if include_ip && tier_medium {
+        let body = fetch_text_opt(
+            &client,
+            "https://raw.githubusercontent.com/elliotwutingfeng/USOM-Blocklists/main/ips.txt",
+        );
+        parse_cidr_v4_lines(&body, &mut ip_ranges_v4);
+    }
+
+    // ----------------------------
     // malware-filter / URLhaus filter — Malware-Hosting IPs (CC0 + MIT)
     // IPs from currently-online URLhaus malware-distribution URLs where the URL
     // host is a bare IP address rather than a domain name. Updated 2×/day.
@@ -1665,6 +1724,10 @@ pub static FIREWALL_FST_BYTES: &[u8] =
          //   ThreatFox IOC IPv4 addresses [medium tier]\n\
          //   (https://github.com/elliotwutingfeng/ThreatFox-IOC-IPs) — CC0 (data) + BSD-3-Clause (mirror).\n\
          //   Data (c) abuse.ch ThreatFox.\n\
+         //\n\
+         //   USOM/TR-CERT Turkey CERT malicious IPs [medium tier]\n\
+         //   (https://github.com/elliotwutingfeng/USOM-Blocklists) — BSD-3-Clause.\n\
+         //   Data from Turkey's Cyber Security Directorate (USOM).\n\
          //\n\
          //   malware-filter URLhaus-filter malware-hosting IPs [large tier]\n\
          //   (https://gitlab.com/malware-filter/urlhaus-filter) — CC0 + MIT.\n\
