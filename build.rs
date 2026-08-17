@@ -1344,7 +1344,7 @@ fn main() -> BuildResult<()> {
     // USOM/TR-CERT — Turkey National CERT Malicious Domain Feed (BSD-3-Clause)
     // Malicious domains compiled daily from Turkey's Cyber Security Directorate
     // (USOM — ulusal-siber-guvenlik.gov.tr), covering phishing, malware C2, and
-    // scam infrastructure. Plain domain list; ~25k verified entries. Provides
+    // scam infrastructure. Plain domain list; ~465k verified entries. Provides
     // geographic/linguistic threat coverage complementary to CERT Polska (already
     // at medium). Dead domains are pruned automatically. BSD-3-Clause mirror by
     // elliotwutingfeng. FP risk: LOW-MEDIUM — CERT-verified, though Turkey-focused
@@ -1624,7 +1624,7 @@ pub static FIREWALL_FST_BYTES: &[u8] =
     // ----------------------------
     // USOM/TR-CERT — Turkey CERT Malicious IPv4 Feed (BSD-3-Clause)
     // Bare IPv4 addresses of malicious hosts confirmed by Turkey's Cyber Security
-    // Directorate (USOM). ~3.5k individual /32 entries; updated daily. Provides
+    // Directorate (USOM). ~15.2k individual /32 entries; updated daily. Provides
     // CERT-verified coverage complementary to Feodo (botnet C2) and ThreatFox
     // (broader malware families). Non-fatal fetch: a transient failure contributes
     // no entries rather than breaking the build. FP risk: LOW — individual /32
