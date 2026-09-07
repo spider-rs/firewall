@@ -1319,27 +1319,6 @@ fn main() -> BuildResult<()> {
         parse_url_domain_lines(&body, &mut unique_entries);
     }
 
-    // ----------------------------
-    // Global Anti-Scam Org (GASO) — Scam & Fraud Domains (BSD-3-Clause)
-    // Crowdsourced, community-vetted scam and fraud domains reported to the
-    // Global Anti-Scam Organization (https://www.globalantiscam.org). The
-    // elliotwutingfeng mirror (BSD-3-Clause, commercial use permitted) mirrors
-    // the GASO dataset once per day via GitHub Actions. The file is a mixed
-    // list: most lines are plain domains, some include a path component (e.g.
-    // `host.example.com/path`); parse_url_domain_lines extracts the hostname
-    // from both forms. ~5k–11k entries; updated daily; low false-positive risk
-    // (manual GASO review before inclusion). The path `/global-anti-scam-org-scam-urls.txt`
-    // name is historical; the content is domain/URL indicators, not full URLs only.
-    // License: BSD-3-Clause (https://github.com/elliotwutingfeng/GlobalAntiScamOrg-blocklist)
-    // ----------------------------
-    if tier_medium && include_bad {
-        let body = fetch_text(
-            &client,
-            "https://raw.githubusercontent.com/elliotwutingfeng/GlobalAntiScamOrg-blocklist/main/global-anti-scam-org-scam-urls.txt",
-        );
-        parse_url_domain_lines(&body, &mut unique_entries);
-    }
-
     // ============================================================
     //  LARGE tier sources (comprehensive protection)
     // ============================================================
@@ -1398,18 +1377,23 @@ fn main() -> BuildResult<()> {
     }
 
     // ----------------------------
-    // OISD Big — Comprehensive Multi-Category Blocklist (GPLv3 code / MIT data)
-    // Superset of OISD Small (added at medium tier); ~268k domains covering ads,
+    // OISD Big — Comprehensive Multi-Category Blocklist (GPL-3.0)
+    // Superset of OISD Small (added at medium tier); ~270k domains covering ads,
     // tracking, malware, and phishing with the same explicit "Block. Don't break."
     // false-positive review loop as the Small tier. The Big list extends coverage
     // with more ad and tracking domains while preserving the same conservative
     // false-positive posture. Overlapping entries with OISD Small are deduplicated
     // at merge time. Updated hourly via the sjhgvr/oisd GitHub mirror.
     // Maintainer: Stephan van Ruth (https://oisd.nl).
-    // NOTE: same license situation as the medium-tier OISD Small entry — the
-    // repository's LICENSE file is GPL v3; the list file header declares MIT for
-    // the data. Widely deployed commercially (Pi-hole, AdGuard Home). Crate
-    // maintainers should verify data-vs-code license scope.
+    // Categorized under `include_bad` (same as OISD Small) because the list
+    // covers malware and phishing in addition to ads and tracking; bad-only
+    // consumers will see the full mixed set, consistent with the existing
+    // OISD Small precedent at medium tier.
+    // License: GPL-3.0 (https://github.com/sjhgvr/oisd/blob/main/LICENSE).
+    // GPL-3.0 permits commercial use. The list header links only to that GPL-3.0
+    // file; no separate MIT data license is present. Widely deployed commercially
+    // (Pi-hole, AdGuard Home). Crate maintainers should verify data-vs-code
+    // license scope for their distribution model.
     // ----------------------------
     if tier_large && include_bad {
         let body = fetch_text(
