@@ -1279,6 +1279,22 @@ fn main() -> BuildResult<()> {
     }
 
     // ----------------------------
+    // HaGeZi — Fake / Scam-store Blocklist (GPLv3)
+    // Targets fake online stores, fake streaming sites, rip-offs, and
+    // subscription traps — consumer-facing scam sites distinct from the
+    // malware/phishing scope of TIF. ~16 k entries; plain domain format;
+    // updated every 1 h. "Block. Don't break." false-positive review loop.
+    // (c) hagezi — https://github.com/hagezi/dns-blocklists — GPLv3.
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/fake-onlydomains.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
     // abuse.ch ThreatFox — Malware Domain IOCs (hosts-file format, CC0)
     // Active malware C2 and distribution domains from the ThreatFox community
     // IOC platform: covers Cobalt Strike, Emotet, QakBot, njRAT, and many more
