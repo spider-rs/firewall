@@ -1401,6 +1401,26 @@ fn main() -> BuildResult<()> {
         parse_url_domain_lines(&body, &mut unique_entries);
     }
 
+    // ----------------------------
+    // TweetFeed — Malicious Domains (CC0 1.0)
+    // 30-day rolling window of malware, phishing and C2 domains reported by
+    // ~95 active security researchers on X/Twitter. Plain domain list rebuilt
+    // every 15 minutes (~5 k entries). No API key or sign-up required.
+    // Coverage is complementary to other feeds here: entries come from
+    // hands-on researcher reports rather than automated scanning, so they often
+    // catch live C2 and phishing infrastructure before feed aggregators do.
+    // CC0 1.0 — any use including commercial, no attribution required.
+    // Fetched non-fatally: a transient API failure contributes no entries.
+    // https://tweetfeed.live/blocklists/
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text_opt(
+            &client,
+            "https://api.tweetfeed.live/v1/blocklist/domains.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
     // ============================================================
     //  LARGE tier sources (comprehensive protection)
     // ============================================================
