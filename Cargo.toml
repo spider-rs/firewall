@@ -1,6 +1,6 @@
 [package]
 name = "spider_firewall"
-version = "2.37.0"
+version = "2.38.0"
 authors = [
     "j-mendez <jeff@spider.cloud>"
 ]
@@ -16,6 +16,9 @@ edition = "2018"
 [dependencies]
 phf = { version = "0.13", features = ["macros"] }
 fst = "0.4"
+# Public suffix list, compiled in (no IO, no allocation). Lets the parent walk
+# stop at the registrable domain instead of testing com.cn or co.uk.
+psl = "2"
 # Runtime "discovered-bad" overlay (feature = "dynamic"). Optional: when the
 # feature is off neither crate is resolved or compiled, so the default build is
 # byte-identical. Both are pure-Rust and cross-platform.
@@ -46,6 +49,7 @@ serde_json = "1"
 hashbrown = "0.15"
 ua_generator = { version = "^0.5" }
 fst = "0.4"
+psl = "2"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
