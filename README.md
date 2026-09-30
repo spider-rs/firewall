@@ -22,16 +22,16 @@ The `small` tier is enabled by default. Enable `medium` or `large` for broader c
 
 ```toml
 # Default — small tier, all categories:
-spider_firewall = "2.35"
+spider_firewall = "2.38"
 
 # Medium tier:
-spider_firewall = { version = "2.35", features = ["medium"] }
+spider_firewall = { version = "2.38", features = ["medium"] }
 
 # Large tier:
-spider_firewall = { version = "2.35", features = ["large"] }
+spider_firewall = { version = "2.38", features = ["large"] }
 
 # Small tier, only bad + ads (no tracking/gambling):
-spider_firewall = { version = "2.35", default-features = false, features = ["default-tls", "bad", "ads", "small"] }
+spider_firewall = { version = "2.38", default-features = false, features = ["default-tls", "bad", "ads", "small"] }
 ```
 
 ## Category Features
@@ -40,11 +40,23 @@ Categories can be toggled independently (all enabled by default):
 
 | Feature | Description |
 |---------|-------------|
-| `bad` | Malware, phishing, scams, fraud, ransomware, abuse |
+| `bad` | Malware, phishing, scams, fraud, ransomware, abuse, plus the adult and category lists below |
 | `ads` | Advertising domains |
 | `tracking` | Tracking and analytics domains |
 | `gambling` | Gambling domains |
 | `ip` | Known-bad IPv4 network ranges (Spamhaus DROP) — opt-in, see [IP blocking](#ip-blocking) |
+
+## Categories and feeds
+
+Since 2.38 the `bad` feature fills three buckets instead of one. Only `CAT_BAD` is a threat verdict, and it is the only bit `is_bad_website_url` reads. `is_url_bad` still matches any bucket.
+
+| Bucket | Read with | Feeds |
+|--------|-----------|-------|
+| `CAT_BAD` | `is_bad_website_url` | spider-rs/bad_websites; ShadowWhisperer Malware, Scam and Typo; Block List Project malware, phishing and scam; URLhaus filter; malware-filter phishing; CyberHost malware; romainmarcoux malicious-domains. Medium adds Block List Project ransomware, fraud and abuse; Phishing.Database; phishdestroy destroylist; durablenapkin scamblocklist; HaGeZi TIF mini; ThreatFox; CERT Polska; PhishIndex; malicious-domains tiers B and C; phishunt. Large adds HaGeZi TIF and the full URLhaus hostfile. |
+| `CAT_ADULT` | `is_adult_website_url` | StevenBlack porn; ShadowWhisperer Adult |
+| `CAT_LISTED` | `is_listed_website_url` | StevenBlack unified hosts, which mixes adware and malware; ShadowWhisperer AI, Apple, Chat, DNS, Dynamic, Junk, Remote, Risk, Shock, Top_Level, Tunnels, UrlShortener and the Wild_ lists other than ads and tracking. Medium adds maltrail suspicious and OISD small. Large adds the Block List Project redirect list. |
+
+A feed entry that is an explicit ICANN public suffix (`com.cn`, `co.uk`) is dropped at build time, and lookups never test one, so a listing like that cannot block a whole zone.
 
 ## Usage
 
@@ -103,7 +115,7 @@ embedded at build time from the [Spamhaus DROP](https://www.spamhaus.org/drop/) 
 via longest-prefix (binary) search. IPv6 currently always returns `false`.
 
 ```toml
-spider_firewall = { version = "2.35", features = ["ip"] }
+spider_firewall = { version = "2.38", features = ["ip"] }
 ```
 
 ```rust

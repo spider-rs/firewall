@@ -88,6 +88,9 @@ use std::sync::OnceLock;
 pub mod dynamic;
 
 /// Category bitmask flags — must stay in sync with build.rs.
+///
+/// Threat feeds only: malware, phishing, scam and fraud. This is the bit
+/// [`is_bad_website_url`] reads, so it is the one to hard-refuse on.
 pub const CAT_BAD: u64 = 1;
 /// Ads category bit.
 pub const CAT_ADS: u64 = 2;
@@ -95,6 +98,15 @@ pub const CAT_ADS: u64 = 2;
 pub const CAT_TRACKING: u64 = 4;
 /// Gambling category bit.
 pub const CAT_GAMBLING: u64 = 8;
+/// Adult content lists (StevenBlack porn, ShadowWhisperer Adult). Before 2.38
+/// these were part of [`CAT_BAD`].
+pub const CAT_ADULT: u64 = 16;
+/// Category lists that say what a site is rather than that it attacks
+/// visitors: ShadowWhisperer AI, Apple, Chat, DNS, Dynamic, Junk, Remote, Risk,
+/// Shock, Top_Level, Tunnels, UrlShortener and Wild_*, the StevenBlack unified
+/// hosts (adware and malware mixed), maltrail suspicious, OISD small and the
+/// Block List Project redirect list. Before 2.38 these were part of [`CAT_BAD`].
+pub const CAT_LISTED: u64 = 32;
 
 /// Overlay OR-term for a category lookup. Expands to a literal `false` when the
 /// `dynamic` feature is off, so the static read path is byte-identical to before.
@@ -232,6 +244,16 @@ pub fn is_bad_website_url(host: &str) -> bool {
     fst_has_category(host, CAT_BAD)
         || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
         || dyn_cat_or!(host, CAT_BAD)
+}
+
+/// Listed by an adult content list. Not a threat verdict.
+pub fn is_adult_website_url(host: &str) -> bool {
+    fst_has_category(host, CAT_ADULT) || dyn_cat_or!(host, CAT_ADULT)
+}
+
+/// Listed by a category list (see [`CAT_LISTED`]). Not a threat verdict.
+pub fn is_listed_website_url(host: &str) -> bool {
+    fst_has_category(host, CAT_LISTED) || dyn_cat_or!(host, CAT_LISTED)
 }
 
 pub fn is_ad_website_url(host: &str) -> bool {
@@ -441,10 +463,46 @@ mod tests {
     }
 
     #[test]
-    fn test_adult_websites_blocked() {
-        // Adult/porn coverage from the StevenBlack porn aggregate (CAT_BAD).
-        assert!(is_bad_website_url("pornhub.com"));
-        assert!(is_bad_website_url("xvideos.com"));
+    fn test_adult_websites_categorized_not_hard_refused() {
+        // Adult lists moved out of CAT_BAD in 2.38: still reported, and still
+        // matched by is_url_bad, but no longer a threat verdict.
+        for host in ["pornhub.com", "xvideos.com"] {
+            assert!(is_adult_website_url(host), "{host} is on an adult list");
+            assert!(is_url_bad(host), "{host} still matches the any-category check");
+            assert!(!is_bad_website_url(host), "{host} is not a threat-feed entry");
+        }
+    }
+
+    #[test]
+    fn test_category_lists_are_not_hard_refused() {
+        // www.veed.io is on ShadowWhisperer's AI list only.
+        assert!(is_listed_website_url("www.veed.io"));
+        assert!(!is_bad_website_url("www.veed.io"));
+        assert!(!is_bad_website_url_clean("https://www.veed.io/ms-MY/peralatan"));
+        // more.com is on ShadowWhisperer's Adult list by mistake, and is on the
+        // whitelist, so it matches nothing at all.
+        for host in ["more.com", "help-teller.more.com"] {
+            assert!(!is_bad_website_url(host), "{host}");
+            assert!(!is_adult_website_url(host), "{host}");
+            assert!(!is_url_bad(host), "{host}");
+        }
+    }
+
+    #[test]
+    fn test_threat_feed_entries_still_hard_refused() {
+        // zoominfo.com is on the Block List Project malware list (small tier)
+        // and abuse list (medium tier), both threat feeds, so it stays refused.
+        for host in [
+            "zoominfo.com",
+            "www.zoominfo.com",
+            "wingwahlau.com",           // spider-rs/bad_websites
+            "10minutesto1.net",         // Block List Project malware
+            "buffooncountabletreble.com",
+            "backspinreentryupright.com",
+            "sub.backspinreentryupright.com",
+        ] {
+            assert!(is_bad_website_url(host), "{host} must stay a threat verdict");
+        }
     }
 
     #[test]

@@ -412,6 +412,8 @@ const CAT_BAD: u64 = 1;
 const CAT_ADS: u64 = 2;
 const CAT_TRACKING: u64 = 4;
 const CAT_GAMBLING: u64 = 8;
+const CAT_ADULT: u64 = 16;
+const CAT_LISTED: u64 = 32;
 
 // local domains to include past ignore. These are valid domains.
 static WHITE_LIST_AD_DOMAINS: &[&str] = &[
@@ -472,6 +474,10 @@ static WHITE_LIST_AD_DOMAINS: &[&str] = &[
     "framer.ai",
     "framer.website",
     "rt.com",
+    // more.com (Teller event ticketing, help-teller.more.com) is on
+    // ShadowWhisperer's Adult list, which is wrong: it is not an adult site.
+    // Allowed here so a copy of that entry into any other feed cannot refuse it.
+    "more.com",
     "clickz.com",
     "ask.com",
     "sogou.com",
@@ -890,6 +896,13 @@ fn main() -> BuildResult<()> {
     let mut unique_ads_entries = HashSet::<String>::new();
     let mut unique_tracking_entries = HashSet::<String>::new();
     let mut unique_gambling_entries = HashSet::<String>::new();
+    // CAT_BAD (`unique_entries`) holds only threat feeds: malware, phishing,
+    // scam and fraud. Adult lists and category lists that describe what a site
+    // is rather than whether it attacks visitors go to their own buckets, so a
+    // caller's hard refusal (`is_bad_website_url`) no longer fires on them.
+    // All three are gated by the `bad` feature, as before the split.
+    let mut unique_adult_entries = HashSet::<String>::new();
+    let mut unique_listed_entries = HashSet::<String>::new();
 
     let need_shadow =
         tier_small && (include_bad || include_ads || include_tracking || include_gambling);
@@ -930,6 +943,12 @@ fn main() -> BuildResult<()> {
             let is_ads = item.name == "Wild_Ads" || item.name == "Ads";
             let is_gambling = item.name == "Gambling";
             let is_bad = !is_tracking && !is_ads && !is_gambling;
+            // Only these three ShadowWhisperer lists are threat feeds. Adult is
+            // adult content. The rest (AI, Apple, Chat, DNS, Dynamic, Junk,
+            // Remote, Risk, Shock, Top_Level, Tunnels, UrlShortener, Wild_*)
+            // describe a kind of site and land in CAT_LISTED.
+            let is_threat = matches!(item.name.as_str(), "Malware" | "Scam" | "Typo");
+            let is_adult = item.name == "Adult";
 
             // Skip downloads for disabled categories.
             if (is_tracking && !include_tracking)
@@ -968,10 +987,17 @@ fn main() -> BuildResult<()> {
                     }
                 }
             } else {
+                let sink = if is_threat {
+                    &mut unique_entries
+                } else if is_adult {
+                    &mut unique_adult_entries
+                } else {
+                    &mut unique_listed_entries
+                };
                 for line in file_content.lines() {
                     let s = line.trim();
                     if !s.is_empty() {
-                        unique_entries.insert(s.to_string());
+                        sink.insert(s.to_string());
                     }
                 }
             }
@@ -1055,7 +1081,7 @@ fn main() -> BuildResult<()> {
             &client,
             "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
         );
-        parse_hosts_lines(&body, &mut unique_entries);
+        parse_hosts_lines(&body, &mut unique_listed_entries);
     }
 
     // ----------------------------
@@ -1111,7 +1137,7 @@ fn main() -> BuildResult<()> {
             &client,
             "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn/hosts",
         );
-        parse_hosts_lines(&body, &mut unique_entries);
+        parse_hosts_lines(&body, &mut unique_adult_entries);
     }
 
     // ----------------------------
@@ -1213,7 +1239,7 @@ fn main() -> BuildResult<()> {
             &client,
             "https://raw.githubusercontent.com/stamparm/maltrail/master/trails/static/suspicious/domain.txt",
         );
-        parse_domain_lines(&body, &mut unique_entries);
+        parse_domain_lines(&body, &mut unique_listed_entries);
     }
 
     // ----------------------------
@@ -1319,7 +1345,7 @@ fn main() -> BuildResult<()> {
             &client,
             "https://raw.githubusercontent.com/sjhgvr/oisd/main/domainswild2_small.txt",
         );
-        parse_domain_lines(&body, &mut unique_entries);
+        parse_domain_lines(&body, &mut unique_listed_entries);
     }
 
     // ----------------------------
@@ -1371,7 +1397,7 @@ fn main() -> BuildResult<()> {
             &client,
             "https://raw.githubusercontent.com/blocklistproject/Lists/master/alt-version/redirect-nl.txt",
         );
-        parse_domain_lines(&body, &mut unique_entries);
+        parse_domain_lines(&body, &mut unique_listed_entries);
     }
 
     // ----------------------------
@@ -1468,6 +1494,8 @@ fn main() -> BuildResult<()> {
         &mut unique_ads_entries,
         &mut unique_tracking_entries,
         &mut unique_gambling_entries,
+        &mut unique_adult_entries,
+        &mut unique_listed_entries,
     ] {
         set.retain(|e| {
             if is_explicit_icann_suffix(e) {
@@ -1510,6 +1538,21 @@ fn main() -> BuildResult<()> {
             .filter(|e| !is_whitelisted(e.as_str()))
         {
             *unified.entry(domain).or_insert(0) |= CAT_TRACKING;
+        }
+    }
+
+    if include_bad {
+        for domain in unique_adult_entries
+            .into_iter()
+            .filter(|e| !is_whitelisted(e.as_str()))
+        {
+            *unified.entry(domain).or_insert(0) |= CAT_ADULT;
+        }
+        for domain in unique_listed_entries
+            .into_iter()
+            .filter(|e| !is_whitelisted(e.as_str()))
+        {
+            *unified.entry(domain).or_insert(0) |= CAT_LISTED;
         }
     }
 
