@@ -165,6 +165,9 @@ pub fn dynamic_has_category(host: &str, cat: u64) -> bool {
     let now = Instant::now();
     let mut h = host;
     loop {
+        if crate::is_explicit_icann_suffix(h) {
+            break;
+        }
         if let Some(e) = snap.map.get(h) {
             if e.cats & cat != 0 && e.expires > now {
                 return true;
@@ -198,6 +201,9 @@ pub fn dynamic_contains(host: &str) -> bool {
     let now = Instant::now();
     let mut h = host;
     loop {
+        if crate::is_explicit_icann_suffix(h) {
+            break;
+        }
         if let Some(e) = snap.map.get(h) {
             if e.expires > now {
                 return true;
@@ -563,6 +569,17 @@ mod tests {
         report_bad("sink-evil.test");
         flush();
         assert!(HITS.load(Ordering::Relaxed) >= 1);
+
+        // a reported public suffix never blocks its zone; a listed host under
+        // it still does.
+        seed_dynamic(vec![
+            ("com.cn".to_string(), CAT_BAD, hour),
+            ("seed-evil.com.cn".to_string(), CAT_BAD, hour),
+        ]);
+        flush();
+        assert!(!dynamic_contains("www.sina.com.cn"));
+        assert!(!dynamic_has_category("www.sina.com.cn", CAT_BAD));
+        assert!(dynamic_contains("a.seed-evil.com.cn"));
 
         // empty / whitespace hosts are ignored (no panic, no empty key).
         report_bad("");

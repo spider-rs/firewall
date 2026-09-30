@@ -2,7 +2,7 @@
 use hashbrown::HashSet;
 use reqwest::blocking::Client;
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs::{self, File};
 use std::io::BufWriter;
@@ -364,6 +364,46 @@ fn fetch_github_contents(client: &Client, url: &str) -> Vec<GithubContent> {
             );
             Vec::new()
         }
+    }
+}
+
+/// True when `name` is a public suffix under an explicit rule in the ICANN
+/// section of the PSL (`com.cn`, `co.uk`, `ad.jp`). False for private-section
+/// suffixes (`amplifyapp.com`, dynamic DNS zones), for names that are a suffix
+/// only through a wildcard rule (`coinbase-corp.fk` under `*.fk`), for unknown
+/// TLDs and for anything registrable. Those stay blockable on purpose: feeds
+/// list them to block free-hosting zones and real phishing domains.
+fn is_explicit_icann_suffix(name: &str) -> bool {
+    const PROBE: &[u8] = b"0--spider-psl-probe";
+    const CAP: usize = 256;
+    let bytes = name.as_bytes();
+    let suffix = match psl::suffix(bytes) {
+        Some(s) => s,
+        None => return false,
+    };
+    if suffix.as_bytes().len() != bytes.len()
+        || !suffix.is_known()
+        || suffix.typ() != Some(psl::Type::Icann)
+    {
+        return false;
+    }
+    let parent = match name.find('.') {
+        Some(dot) => &bytes[dot..],
+        None => return true,
+    };
+    let len = PROBE.len() + parent.len();
+    if len > CAP {
+        return false;
+    }
+    let mut buf = [0u8; CAP];
+    buf[..PROBE.len()].copy_from_slice(PROBE);
+    buf[PROBE.len()..len].copy_from_slice(parent);
+    let probe = &buf[..len];
+    // An invented label under the same parent that is also a whole suffix
+    // means the rule is a wildcard, not an explicit entry for `name`.
+    match psl::suffix(probe) {
+        Some(s) => s.as_bytes().len() != probe.len(),
+        None => true,
     }
 }
 
@@ -1416,6 +1456,35 @@ fn main() -> BuildResult<()> {
     // BTreeMap gives us sorted iteration which fst::MapBuilder requires.
     // ----------------------------
     let mut unified = BTreeMap::<String, u64>::new();
+
+    // A feed line naming a public suffix (one malware feed lists `com.cn`)
+    // blocks every site under it, and the prune below would then delete the
+    // listed children it "covers", so the real bad hosts under that suffix
+    // would survive only through the suffix entry. Drop explicit ICANN
+    // suffixes here, before the merge and the prune, so the children stay.
+    let mut dropped_suffixes = BTreeSet::<String>::new();
+    for set in [
+        &mut unique_entries,
+        &mut unique_ads_entries,
+        &mut unique_tracking_entries,
+        &mut unique_gambling_entries,
+    ] {
+        set.retain(|e| {
+            if is_explicit_icann_suffix(e) {
+                dropped_suffixes.insert(e.clone());
+                false
+            } else {
+                true
+            }
+        });
+    }
+    if !dropped_suffixes.is_empty() {
+        println!(
+            "cargo:warning=spider_firewall: dropped {} public-suffix feed entries: {}",
+            dropped_suffixes.len(),
+            dropped_suffixes.iter().cloned().collect::<Vec<_>>().join(", ")
+        );
+    }
 
     if include_bad {
         for domain in unique_entries

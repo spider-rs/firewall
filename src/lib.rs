@@ -134,13 +134,67 @@ fn firewall_map() -> &'static fst::Map<&'static [u8]> {
         .get_or_init(|| fst::Map::new(FIREWALL_FST_BYTES).expect("firewall fst invalid"))
 }
 
+/// True when `name` is a public suffix under an explicit rule in the ICANN
+/// section of the PSL (`com.cn`, `co.uk`, `ad.jp`). False for private-section
+/// suffixes (`amplifyapp.com`, dynamic DNS zones), for names that are a suffix
+/// only through a wildcard rule (`coinbase-corp.fk` under `*.fk`), for unknown
+/// TLDs and for anything registrable. Those stay blockable on purpose: feeds
+/// list them to block free-hosting zones and real phishing domains.
+#[inline]
+pub(crate) fn is_explicit_icann_suffix(name: &str) -> bool {
+    const PROBE: &[u8] = b"0--spider-psl-probe";
+    const CAP: usize = 256;
+    let bytes = name.as_bytes();
+    let suffix = match psl::suffix(bytes) {
+        Some(s) => s,
+        None => return false,
+    };
+    if suffix.as_bytes().len() != bytes.len()
+        || !suffix.is_known()
+        || suffix.typ() != Some(psl::Type::Icann)
+    {
+        return false;
+    }
+    let parent = match name.find('.') {
+        Some(dot) => &bytes[dot..],
+        None => return true,
+    };
+    let len = PROBE.len() + parent.len();
+    if len > CAP {
+        return false;
+    }
+    let mut buf = [0u8; CAP];
+    buf[..PROBE.len()].copy_from_slice(PROBE);
+    buf[PROBE.len()..len].copy_from_slice(parent);
+    let probe = &buf[..len];
+    // An invented label under the same parent that is also a whole suffix
+    // means the rule is a wildcard, not an explicit entry for `name`.
+    match psl::suffix(probe) {
+        Some(s) => s.as_bytes().len() != probe.len(),
+        None => true,
+    }
+}
+
 /// Check if host (or any parent domain) has the given category in the FST.
-/// Walks up the domain hierarchy: "a.b.example.com" -> "b.example.com" -> "example.com".
+/// Walks up the domain hierarchy: "a.b.example.com" -> "b.example.com" -> "example.com",
+/// stopping before an explicit ICANN public suffix ("x.sina.com.cn" tests
+/// "x.sina.com.cn" and "sina.com.cn", never "com.cn").
 #[inline]
 fn fst_has_category(host: &str, cat: u64) -> bool {
-    let map = firewall_map();
+    map_has_category(firewall_map(), host, cat)
+}
+
+/// The walk behind [`fst_has_category`], over any map, so tests can drive it
+/// with a list that still carries a public-suffix entry.
+#[inline]
+fn map_has_category<D: AsRef<[u8]>>(map: &fst::Map<D>, host: &str, cat: u64) -> bool {
     let mut h = host;
     loop {
+        // Never test a public suffix: a list entry for `com.cn` must not
+        // refuse every site under it. Everything above it is a suffix too.
+        if is_explicit_icann_suffix(h) {
+            break;
+        }
         if let Some(v) = map.get(h) {
             if v & cat != 0 {
                 return true;
@@ -223,6 +277,9 @@ fn fst_contains_any(host: &str) -> bool {
     let map = firewall_map();
     let mut h = host;
     loop {
+        if is_explicit_icann_suffix(h) {
+            break;
+        }
         if map.contains_key(h) {
             return true;
         }
@@ -514,6 +571,87 @@ mod tests {
         for host in ["1rx.io", "bidr.io", "fpjs.io", "kameleoon.io"] {
             assert!(is_url_bad(host), "{host} must stay blocked");
         }
+    }
+
+    #[test]
+    fn test_public_suffix_entries_do_not_block_their_zone() {
+        // A malware feed lists `com.cn`. Before this fix every site under it
+        // was refused, including the national portals.
+        for host in [
+            "www.sina.com.cn",
+            "www.people.com.cn",
+            "edu.china.com.cn",
+            "static.cninfo.com.cn",
+            "www.questmobile.com.cn",
+            "www.mtkxjs.com.cn",
+        ] {
+            assert!(!is_bad_website_url(host), "{host} must not be refused by the com.cn entry");
+            assert!(!is_url_bad(host), "{host} must not match any category");
+        }
+        assert!(!is_bad_website_url_clean("https://www.sina.com.cn/news"));
+    }
+
+    #[test]
+    fn test_listed_hosts_under_a_public_suffix_still_blocked() {
+        // Children of `com.cn` were pruned while `com.cn` itself was listed.
+        // With the suffix entry dropped before the prune they are kept.
+        for host in [
+            "cn-oyi-okx.com.cn",      // phishing feed
+            "download-sougou.com.cn", // urlhaus malware feed
+            "b86-telegram.com.cn",    // phishing feed
+        ] {
+            assert!(is_bad_website_url(host), "{host} must stay blocked");
+            let sub = format!("login.{host}");
+            assert!(is_bad_website_url(&sub), "{sub} must stay blocked");
+        }
+    }
+
+    #[test]
+    fn test_private_and_wildcard_suffix_listings_still_block() {
+        // PSL private-section zones (free hosting, dynamic DNS) and names that
+        // are suffixes only through a wildcard rule are listed on purpose.
+        for host in [
+            "coinbase-corp.fk",
+            "login.coinbase-corp.fk",
+            "googlecom.mm",
+            "anything.amplifyapp.com",
+        ] {
+            assert!(is_bad_website_url(host), "{host} must stay blocked");
+        }
+        // And the plain subdomain walk still reaches a listed registrable domain.
+        assert!(is_bad_website_url("a.b.wingwahlau.com"));
+    }
+
+    #[test]
+    fn test_walk_skips_a_public_suffix_entry_even_if_present() {
+        // The build drops suffix entries; the walk also refuses to test one,
+        // so a list that still carries `com.cn` cannot block the zone.
+        let map = fst::Map::from_iter(vec![("com.cn", CAT_BAD), ("evil.com.cn", CAT_BAD)]).unwrap();
+        assert!(!map_has_category(&map, "www.sina.com.cn", CAT_BAD));
+        assert!(map_has_category(&map, "evil.com.cn", CAT_BAD));
+        assert!(map_has_category(&map, "a.evil.com.cn", CAT_BAD));
+        let map = fst::Map::from_iter(vec![("amplifyapp.com", CAT_BAD)]).unwrap();
+        assert!(map_has_category(&map, "x.amplifyapp.com", CAT_BAD), "private suffix entries still block");
+    }
+
+    #[test]
+    fn test_is_explicit_icann_suffix() {
+        for s in ["com.cn", "co.uk", "com.au", "gov.cn", "co.tz", "ad.jp", "cn"] {
+            assert!(is_explicit_icann_suffix(s), "{s}");
+        }
+        for s in [
+            "sina.com.cn",
+            "bbc.co.uk",
+            "amplifyapp.com",
+            "blogspot.com",
+            "coinbase-corp.fk",
+            "googlecom.mm",
+            "",
+        ] {
+            assert!(!is_explicit_icann_suffix(s), "{s}");
+        }
+        let long = format!("{}.com.cn", "a".repeat(300));
+        assert!(!is_explicit_icann_suffix(&long));
     }
 
     #[test]
