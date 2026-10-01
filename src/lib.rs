@@ -511,6 +511,21 @@ mod tests {
         assert!(!is_bad_website_url("github.com"));
         assert!(!is_bad_website_url("wikipedia.org"));
         assert!(!is_bad_website_url("google.com"));
+        // Platform roots that rejected candidate feeds listed outright, plus the
+        // hosts allowlisted out of TweetFeed.
+        for host in [
+            "myshopify.com",
+            "metamask.io",
+            "etherscan.io",
+            "r2.dev",
+            "csiro.au",
+            "pixeldrain.com",
+            "submit-form.com",
+            "kayoanime.com",
+            "luckyprint52.ru",
+        ] {
+            assert!(!is_bad_website_url(host), "{host} hard-refused");
+        }
     }
 
     #[test]

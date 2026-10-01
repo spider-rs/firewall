@@ -683,7 +683,20 @@ static WHITE_LIST_AD_DOMAINS: &[&str] = &[
     "scopely.io",
     "saygames.io",
     "voodoo-tech.io",
-    "voodoo-gaming.io"
+    "voodoo-gaming.io",
+    // -- Hosted services TweetFeed lists by root domain
+    //
+    // Researchers report the abused file or form, but the feed carries only the
+    // host, which would refuse the whole service. pixeldrain.com is a file host
+    // and submit-form.com is a form backend for static sites.
+    "pixeldrain.com",
+    "submit-form.com",
+    // Real sites TweetFeed reported for ClickFix: an anime news site live since
+    // 2019 and a print shop live since 2015. On kayoanime.com the lure comes
+    // from a third-party ad loader (nappyonsetstiffness.com), which stays
+    // blocked; the first-party HTML does the crawler no harm.
+    "kayoanime.com",
+    "luckyprint52.ru"
 ];
 // Deliberately NOT whitelisted, so the reasoning is not relitigated each time:
 //
