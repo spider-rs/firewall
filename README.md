@@ -22,16 +22,16 @@ The `small` tier is enabled by default. Enable `medium` or `large` for broader c
 
 ```toml
 # Default — small tier, all categories:
-spider_firewall = "2.38"
+spider_firewall = "2.39"
 
 # Medium tier:
-spider_firewall = { version = "2.38", features = ["medium"] }
+spider_firewall = { version = "2.39", features = ["medium"] }
 
 # Large tier:
-spider_firewall = { version = "2.38", features = ["large"] }
+spider_firewall = { version = "2.39", features = ["large"] }
 
 # Small tier, only bad + ads (no tracking/gambling):
-spider_firewall = { version = "2.38", default-features = false, features = ["default-tls", "bad", "ads", "small"] }
+spider_firewall = { version = "2.39", default-features = false, features = ["default-tls", "bad", "ads", "small"] }
 ```
 
 ## Category Features
@@ -115,7 +115,7 @@ embedded at build time from the [Spamhaus DROP](https://www.spamhaus.org/drop/) 
 via longest-prefix (binary) search. IPv6 currently always returns `false`.
 
 ```toml
-spider_firewall = { version = "2.38", features = ["ip"] }
+spider_firewall = { version = "2.39", features = ["ip"] }
 ```
 
 ```rust
