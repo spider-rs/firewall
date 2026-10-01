@@ -52,7 +52,7 @@ Since 2.38 the `bad` feature fills three buckets instead of one. Only `CAT_BAD` 
 
 | Bucket | Read with | Feeds |
 |--------|-----------|-------|
-| `CAT_BAD` | `is_bad_website_url` | spider-rs/bad_websites; ShadowWhisperer Malware, Scam and Typo; Block List Project malware, phishing and scam; URLhaus filter; malware-filter phishing; CyberHost malware; romainmarcoux malicious-domains. Medium adds Block List Project ransomware, fraud and abuse; Phishing.Database; phishdestroy destroylist; durablenapkin scamblocklist; HaGeZi TIF mini; ThreatFox; CERT Polska; PhishIndex; malicious-domains tiers B and C; phishunt. Large adds HaGeZi TIF and the full URLhaus hostfile. |
+| `CAT_BAD` | `is_bad_website_url` | spider-rs/bad_websites; ShadowWhisperer Malware, Scam and Typo; Block List Project malware, phishing and scam; URLhaus filter; malware-filter phishing; CyberHost malware; romainmarcoux malicious-domains. Medium adds Block List Project ransomware, fraud and abuse; Phishing.Database; phishdestroy destroylist; durablenapkin scamblocklist; HaGeZi TIF mini; ThreatFox; CERT Polska; PhishIndex; malicious-domains tiers B and C; phishunt; HaGeZi Fake; TweetFeed. Large adds HaGeZi TIF and the full URLhaus hostfile. |
 | `CAT_ADULT` | `is_adult_website_url` | StevenBlack porn; ShadowWhisperer Adult |
 | `CAT_LISTED` | `is_listed_website_url` | StevenBlack unified hosts, which mixes adware and malware; ShadowWhisperer AI, Apple, Chat, DNS, Dynamic, Junk, Remote, Risk, Shock, Top_Level, Tunnels, UrlShortener and the Wild_ lists other than ads and tracking. Medium adds maltrail suspicious and OISD small. Large adds the Block List Project redirect list. |
 
