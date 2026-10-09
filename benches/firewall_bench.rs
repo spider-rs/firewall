@@ -62,6 +62,29 @@ fn bench_dynamic(c: &mut Criterion) {
     });
 }
 
+fn bench_dns_filter_shapes(c: &mut Criterion) {
+    // The DNS-filter shape before 2.42: one walk per category, each on a
+    // formatted URL. And the single-pass mask on the bare host.
+    for host in ["goodwebsite.com", "a.b.c.d.goodwebsite.com", "doubleclick.net"] {
+        c.bench_function(&format!("per-category _clean x4 ({host})"), |b| {
+            b.iter(|| {
+                let url = format!("https://{}/", black_box(host));
+                is_ad_website_url_clean(&url)
+                    || is_tracking_website_url_clean(&url)
+                    || is_malicious_website_url_clean(&url)
+                    || is_gambling_website_url_clean(&url)
+            })
+        });
+        c.bench_function(&format!("website_category_mask ({host})"), |b| {
+            b.iter(|| website_category_mask(black_box(host)))
+        });
+    }
+}
+
+criterion_group!(
+    benches_dns,
+    bench_dns_filter_shapes
+);
 #[cfg(not(feature = "dynamic"))]
 criterion_group!(
     benches,
@@ -79,4 +102,4 @@ criterion_group!(
     bench_get_host_from_url,
     bench_dynamic,
 );
-criterion_main!(benches);
+criterion_main!(benches_dns, benches);
