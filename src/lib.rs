@@ -98,15 +98,18 @@ pub const CAT_ADS: u64 = 2;
 pub const CAT_TRACKING: u64 = 4;
 /// Gambling category bit.
 pub const CAT_GAMBLING: u64 = 8;
-/// Adult content lists (StevenBlack porn, ShadowWhisperer Adult). Before 2.38
-/// these were part of [`CAT_BAD`].
+/// Adult and shock content lists (StevenBlack porn, ShadowWhisperer Adult and
+/// Shock). Hard-refused alongside [`CAT_BAD`]: see [`CAT_REFUSED`].
 pub const CAT_ADULT: u64 = 16;
 /// Category lists that say what a site is rather than that it attacks
 /// visitors: ShadowWhisperer AI, Apple, Chat, DNS, Dynamic, Junk, Remote, Risk,
-/// Shock, Top_Level, Tunnels, UrlShortener and Wild_*, the StevenBlack unified
+/// Top_Level, Tunnels, UrlShortener and Wild_*, the StevenBlack unified
 /// hosts (adware and malware mixed), maltrail suspicious, OISD small and the
 /// Block List Project redirect list. Before 2.38 these were part of [`CAT_BAD`].
 pub const CAT_LISTED: u64 = 32;
+/// The bits a hard refusal reads: threat feeds plus adult and shock content.
+/// 2.38 and 2.39 refused [`CAT_BAD`] alone, which let adult sites through.
+pub const CAT_REFUSED: u64 = CAT_BAD | CAT_ADULT;
 
 /// Overlay OR-term for a category lookup. Expands to a literal `false` when the
 /// `dynamic` feature is off, so the static read path is byte-identical to before.
@@ -241,12 +244,13 @@ pub fn get_host_from_url(url: &str) -> Option<&str> {
 }
 
 pub fn is_bad_website_url(host: &str) -> bool {
-    fst_has_category(host, CAT_BAD)
+    fst_has_category(host, CAT_REFUSED)
         || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
-        || dyn_cat_or!(host, CAT_BAD)
+        || dyn_cat_or!(host, CAT_REFUSED)
 }
 
-/// Listed by an adult content list. Not a threat verdict.
+/// Listed by an adult or shock content list. [`is_bad_website_url`] refuses
+/// these too; this reads the bucket on its own.
 pub fn is_adult_website_url(host: &str) -> bool {
     fst_has_category(host, CAT_ADULT) || dyn_cat_or!(host, CAT_ADULT)
 }
@@ -276,10 +280,10 @@ pub fn is_gambling_website_url(host: &str) -> bool {
 
 /// General networking blocking. At the moment you have to build this list yourself with the macro define_firewall!("networking", "a.ping.com").
 pub fn is_networking_url(host: &str) -> bool {
-    fst_has_category(host, CAT_BAD)
+    fst_has_category(host, CAT_REFUSED)
         || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
         || is_website_in_custom_set(host, &firewall::GLOBAL_NETWORKING_WEBSITES)
-        || dyn_cat_or!(host, CAT_BAD)
+        || dyn_cat_or!(host, CAT_REFUSED)
 }
 
 /// Determine a generic bad url.
@@ -463,13 +467,29 @@ mod tests {
     }
 
     #[test]
-    fn test_adult_websites_categorized_not_hard_refused() {
-        // Adult lists moved out of CAT_BAD in 2.38: still reported, and still
-        // matched by is_url_bad, but no longer a threat verdict.
-        for host in ["pornhub.com", "xvideos.com"] {
+    fn test_adult_websites_are_hard_refused() {
+        // 2.38 moved adult lists out of the refusal and let them through. They
+        // are refused again, and still reported on their own bucket.
+        for host in ["pornhub.com", "www.pornhub.com", "xvideos.com"] {
             assert!(is_adult_website_url(host), "{host} is on an adult list");
-            assert!(is_url_bad(host), "{host} still matches the any-category check");
-            assert!(!is_bad_website_url(host), "{host} is not a threat-feed entry");
+            assert!(is_url_bad(host), "{host} matches the any-category check");
+            assert!(is_bad_website_url(host), "{host} must be refused");
+            assert!(is_bad_website_url_clean(&format!("https://{host}/")), "{host} via url");
+            assert!(is_networking_url(host), "{host} networking check");
+        }
+    }
+
+    #[test]
+    fn test_adult_list_false_positives_are_not_refused() {
+        // The porn alternate repeats the unified hosts file; those entries are
+        // ads and trackers, not adult, and must not be hard-refused as targets.
+        for host in ["googletagmanager.com", "doubleclick.net", "google-analytics.com"] {
+            assert!(!is_adult_website_url(host), "{host} is not adult");
+            assert!(!is_bad_website_url(host), "{host} must not be a hard refusal");
+        }
+        // Mainstream sites the adult lists carry by mistake.
+        for host in ["b-cdn.net", "refinery29.com", "www.refinery29.com", "yandex.by", "dmm.com"] {
+            assert!(!is_adult_website_url(host), "{host} is not adult");
         }
     }
 

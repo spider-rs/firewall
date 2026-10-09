@@ -726,6 +726,31 @@ fn fetch_text(client: &Client, url: &str) -> String {
 
 /// Parse a hosts-format file (e.g. `0.0.0.0 domain` or `127.0.0.1 domain`),
 /// skipping comments, localhost aliases, and ip6-* entries.
+/// Mainstream sites the adult lists carry by mistake. Unlike the whitelist,
+/// this only keeps them out of CAT_ADULT, so an ads or tracking listing of the
+/// same host still applies. Found by scanning the Tranco top 10k against the
+/// adult bucket when 2.40 made it a hard refusal again.
+const ADULT_FALSE_POSITIVES: &[&str] = &[
+    "b-cdn.net",
+    "yandex.by",
+    "refinery29.com",
+    "suruga-ya.jp",
+    "booth.pm",
+    "fc2.com",
+    "dmm.com",
+    "melonbooks.co.jp",
+    "fastpic.ru",
+];
+
+fn is_adult_false_positive(domain: &str) -> bool {
+    ADULT_FALSE_POSITIVES.iter().any(|fp| {
+        domain == *fp
+            || (domain.len() > fp.len()
+                && domain.ends_with(fp)
+                && domain.as_bytes()[domain.len() - fp.len() - 1] == b'.')
+    })
+}
+
 fn parse_hosts_lines(body: &str, out: &mut HashSet<String>) {
     for line in body.lines() {
         let trimmed = line.trim();
@@ -956,12 +981,12 @@ fn main() -> BuildResult<()> {
             let is_ads = item.name == "Wild_Ads" || item.name == "Ads";
             let is_gambling = item.name == "Gambling";
             let is_bad = !is_tracking && !is_ads && !is_gambling;
-            // Only these three ShadowWhisperer lists are threat feeds. Adult is
-            // adult content. The rest (AI, Apple, Chat, DNS, Dynamic, Junk,
-            // Remote, Risk, Shock, Top_Level, Tunnels, UrlShortener, Wild_*)
-            // describe a kind of site and land in CAT_LISTED.
+            // Only these three ShadowWhisperer lists are threat feeds. Adult and
+            // Shock are content the caller refuses (CAT_ADULT). The rest (AI,
+            // Apple, Chat, DNS, Dynamic, Junk, Remote, Risk, Top_Level, Tunnels,
+            // UrlShortener, Wild_*) describe a kind of site and land in CAT_LISTED.
             let is_threat = matches!(item.name.as_str(), "Malware" | "Scam" | "Typo");
-            let is_adult = item.name == "Adult";
+            let is_adult = matches!(item.name.as_str(), "Adult" | "Shock");
 
             // Skip downloads for disabled categories.
             if (is_tracking && !include_tracking)
@@ -1089,12 +1114,15 @@ fn main() -> BuildResult<()> {
     // ----------------------------
     // Steven Black Unified Hosts
     // ----------------------------
+    // Kept apart as well, so the porn alternate below can subtract it.
+    let mut stevenblack_base = HashSet::<String>::new();
     if tier_small && include_bad {
         let body = fetch_text(
             &client,
             "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
         );
-        parse_hosts_lines(&body, &mut unique_listed_entries);
+        parse_hosts_lines(&body, &mut stevenblack_base);
+        unique_listed_entries.extend(stevenblack_base.iter().cloned());
     }
 
     // ----------------------------
@@ -1143,14 +1171,18 @@ fn main() -> BuildResult<()> {
 
     // ----------------------------
     // StevenBlack hosts — Porn/Adult aggregate
-    // Hosts-file format; dedups against the base StevenBlack hosts above.
+    // The porn alternate is the unified hosts file plus the porn extension, so
+    // it repeats every ad, tracker and CDN entry of the base file. Only the
+    // entries the base file lacks are adult; the rest stay in CAT_LISTED.
     // ----------------------------
     if tier_small && include_bad {
         let body = fetch_text(
             &client,
             "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn/hosts",
         );
-        parse_hosts_lines(&body, &mut unique_adult_entries);
+        let mut porn = HashSet::<String>::new();
+        parse_hosts_lines(&body, &mut porn);
+        unique_adult_entries.extend(porn.into_iter().filter(|d| !stevenblack_base.contains(d)));
     }
 
     // ----------------------------
@@ -1593,7 +1625,7 @@ fn main() -> BuildResult<()> {
     if include_bad {
         for domain in unique_adult_entries
             .into_iter()
-            .filter(|e| !is_whitelisted(e.as_str()))
+            .filter(|e| !is_whitelisted(e.as_str()) && !is_adult_false_positive(e.as_str()))
         {
             *unified.entry(domain).or_insert(0) |= CAT_ADULT;
         }
