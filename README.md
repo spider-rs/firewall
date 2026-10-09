@@ -48,7 +48,7 @@ Categories can be toggled independently (all enabled by default):
 
 ## Categories and feeds
 
-The `bad` feature fills three buckets. `is_bad_website_url` refuses `CAT_BAD` and `CAT_ADULT` (the `CAT_REFUSED` mask). `CAT_LISTED` is reported only. `is_url_bad` still matches any bucket. 2.38 and 2.39 refused `CAT_BAD` alone, which let adult sites through; 2.40 restores the refusal.
+The `bad` feature fills three buckets. `is_bad_website_url` refuses `CAT_BAD` and `CAT_ADULT` (the `CAT_REFUSED` mask). `is_malicious_website_url` reads `CAT_BAD` alone, for a device firewall that should block malice but leave adult content to the user. `CAT_LISTED` is reported only. `is_url_bad` still matches any bucket. 2.38 and 2.39 refused `CAT_BAD` alone, which let adult sites through; 2.40 restores the refusal.
 
 | Bucket | Read with | Feeds |
 |--------|-----------|-------|

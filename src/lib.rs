@@ -243,10 +243,23 @@ pub fn get_host_from_url(url: &str) -> Option<&str> {
     }
 }
 
+/// Hard refusal for a crawler: threat feeds plus adult and shock content
+/// ([`CAT_REFUSED`]). A device firewall that should leave content choices to
+/// the user reads [`is_malicious_website_url`] instead.
 pub fn is_bad_website_url(host: &str) -> bool {
     fst_has_category(host, CAT_REFUSED)
         || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
         || dyn_cat_or!(host, CAT_REFUSED)
+}
+
+/// Threat feeds only ([`CAT_BAD`]): malware, phishing, scam and fraud. No adult,
+/// shock or category lists, so a content choice never reads as malice. The
+/// static lists and the custom `define_firewall!` set count, same as
+/// [`is_bad_website_url`].
+pub fn is_malicious_website_url(host: &str) -> bool {
+    fst_has_category(host, CAT_BAD)
+        || is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES)
+        || dyn_cat_or!(host, CAT_BAD)
 }
 
 /// Listed by an adult or shock content list. [`is_bad_website_url`] refuses
@@ -334,6 +347,20 @@ fn is_website_in_custom_set(
 pub fn is_bad_website_url_clean(host: &str) -> bool {
     get_host_from_url(host)
         .map(is_bad_website_url)
+        .unwrap_or(false)
+}
+
+/// [`is_malicious_website_url`] on a URL, removing http(s):// and paths.
+pub fn is_malicious_website_url_clean(host: &str) -> bool {
+    get_host_from_url(host)
+        .map(is_malicious_website_url)
+        .unwrap_or(false)
+}
+
+/// [`is_adult_website_url`] on a URL, removing http(s):// and paths.
+pub fn is_adult_website_url_clean(host: &str) -> bool {
+    get_host_from_url(host)
+        .map(is_adult_website_url)
         .unwrap_or(false)
 }
 
@@ -477,6 +504,24 @@ mod tests {
             assert!(is_bad_website_url_clean(&format!("https://{host}/")), "{host} via url");
             assert!(is_networking_url(host), "{host} networking check");
         }
+    }
+
+    #[test]
+    fn test_malicious_check_reads_threat_feeds_only() {
+        // A device firewall needs malice without content choices.
+        for host in ["pornhub.com", "xvideos.com"] {
+            assert!(is_bad_website_url(host), "{host}: crawler refusal");
+            assert!(!is_malicious_website_url(host), "{host}: not malice");
+            assert!(is_adult_website_url_clean(&format!("https://{host}/x")), "{host}");
+            assert!(!is_malicious_website_url_clean(&format!("https://{host}/x")), "{host}");
+        }
+        for host in ["zoominfo.com", "wingwahlau.com", "10minutesto1.net"] {
+            assert!(is_malicious_website_url(host), "{host}: threat feed");
+            assert!(is_malicious_website_url_clean(&format!("https://{host}/")), "{host}");
+            assert!(is_bad_website_url(host), "{host}");
+        }
+        assert!(!is_malicious_website_url("www.veed.io"));
+        assert!(!is_malicious_website_url("github.com"));
     }
 
     #[test]
