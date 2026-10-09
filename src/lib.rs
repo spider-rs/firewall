@@ -199,6 +199,62 @@ fn fst_has_category(host: &str, cat: u64) -> bool {
     map_has_category(firewall_map(), host, cat)
 }
 
+/// Every category bit the static map holds for `host` and its parents, in one
+/// walk. Same stops as [`map_has_category`].
+#[inline]
+fn map_category_mask<D: AsRef<[u8]>>(map: &fst::Map<D>, host: &str) -> u64 {
+    let mut mask = 0;
+    let mut h = host;
+    loop {
+        if is_explicit_icann_suffix(h) {
+            break;
+        }
+        if let Some(v) = map.get(h) {
+            mask |= v;
+        }
+        match h.find('.') {
+            Some(dot) => {
+                h = &h[dot + 1..];
+                if !h.contains('.') {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+    mask
+}
+
+/// Every category bit `host` carries, from one walk of the static map plus the
+/// custom `define_firewall!` sets and, with `dynamic`, one walk of the overlay.
+/// Test it with the `CAT_*` constants: `mask & CAT_ADS != 0` answers exactly
+/// what [`is_ad_website_url`] does, `mask & CAT_BAD != 0` what
+/// [`is_malicious_website_url`] does, `mask & CAT_REFUSED != 0` what
+/// [`is_bad_website_url`] does. A caller that needs several categories per
+/// host, such as a DNS filter, pays for one walk instead of one per category.
+/// The `networking` custom set has no bit and is not reported.
+#[inline]
+pub fn website_category_mask(host: &str) -> u64 {
+    let mut mask = map_category_mask(firewall_map(), host);
+    if is_website_in_custom_set(host, &firewall::GLOBAL_BAD_WEBSITES) {
+        mask |= CAT_BAD;
+    }
+    if is_website_in_custom_set(host, &firewall::GLOBAL_ADS_WEBSITES) {
+        mask |= CAT_ADS;
+    }
+    if is_website_in_custom_set(host, &firewall::GLOBAL_TRACKING_WEBSITES) {
+        mask |= CAT_TRACKING;
+    }
+    if is_website_in_custom_set(host, &firewall::GLOBAL_GAMBLING_WEBSITES) {
+        mask |= CAT_GAMBLING;
+    }
+    #[cfg(feature = "dynamic")]
+    {
+        mask |= dynamic::dynamic_category_mask(host);
+    }
+    mask
+}
+
 /// The walk behind [`fst_has_category`], over any map, so tests can drive it
 /// with a list that still carries a public-suffix entry.
 #[inline]
@@ -503,6 +559,27 @@ mod tests {
             assert!(is_bad_website_url(host), "{host} must be refused");
             assert!(is_bad_website_url_clean(&format!("https://{host}/")), "{host} via url");
             assert!(is_networking_url(host), "{host} networking check");
+        }
+    }
+
+    #[test]
+    fn test_category_mask_matches_the_per_category_checks() {
+        for host in [
+            "pornhub.com", "www.pornhub.com", "xvideos.com", "doubleclick.net",
+            "google-analytics.com", "admob.google.com", "wingwahlau.com",
+            "a.b.wingwahlau.com", "zoominfo.com", "www.veed.io", "bet365.com",
+            "github.com", "example.com", "www.sina.com.cn", "b-cdn.net",
+            "refinery29.com", "more.com", "help-teller.more.com", "", "com",
+        ] {
+            let m = website_category_mask(host);
+            assert_eq!(m & CAT_ADS != 0, is_ad_website_url(host), "{host} ads");
+            assert_eq!(m & CAT_TRACKING != 0, is_tracking_website_url(host), "{host} tracking");
+            assert_eq!(m & CAT_GAMBLING != 0, is_gambling_website_url(host), "{host} gambling");
+            assert_eq!(m & CAT_BAD != 0, is_malicious_website_url(host), "{host} malicious");
+            assert_eq!(m & CAT_ADULT != 0, is_adult_website_url(host), "{host} adult");
+            assert_eq!(m & CAT_LISTED != 0, is_listed_website_url(host), "{host} listed");
+            assert_eq!(m & CAT_REFUSED != 0, is_bad_website_url(host), "{host} refused");
+            assert_eq!(m != 0, is_url_bad(host) && m != 0, "{host} any");
         }
     }
 

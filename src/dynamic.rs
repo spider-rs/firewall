@@ -186,6 +186,43 @@ pub fn dynamic_has_category(host: &str, cat: u64) -> bool {
     false
 }
 
+/// Every unexpired category bit the overlay holds for `host` or a parent
+/// domain, in one walk. 0 when the overlay is empty.
+#[inline]
+pub fn dynamic_category_mask(host: &str) -> u64 {
+    let cell = match SNAPSHOT.get() {
+        Some(c) => c,
+        None => return 0,
+    };
+    let snap = cell.load();
+    if snap.map.is_empty() {
+        return 0;
+    }
+    let now = Instant::now();
+    let mut mask = 0;
+    let mut h = host;
+    loop {
+        if crate::is_explicit_icann_suffix(h) {
+            break;
+        }
+        if let Some(e) = snap.map.get(h) {
+            if e.expires > now {
+                mask |= e.cats;
+            }
+        }
+        match h.find('.') {
+            Some(dot) => {
+                h = &h[dot + 1..];
+                if !h.contains('.') {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+    mask
+}
+
 /// True if `host` (or a parent domain) is in the overlay under any category and
 /// not expired.
 #[inline]
