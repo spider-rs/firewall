@@ -48,13 +48,13 @@ Categories can be toggled independently (all enabled by default):
 
 ## Categories and feeds
 
-Since 2.38 the `bad` feature fills three buckets instead of one. Only `CAT_BAD` is a threat verdict, and it is the only bit `is_bad_website_url` reads. `is_url_bad` still matches any bucket.
+The `bad` feature fills three buckets. `is_bad_website_url` refuses `CAT_BAD` and `CAT_ADULT` (the `CAT_REFUSED` mask). `CAT_LISTED` is reported only. `is_url_bad` still matches any bucket. 2.38 and 2.39 refused `CAT_BAD` alone, which let adult sites through; 2.40 restores the refusal.
 
 | Bucket | Read with | Feeds |
 |--------|-----------|-------|
 | `CAT_BAD` | `is_bad_website_url` | spider-rs/bad_websites; ShadowWhisperer Malware, Scam and Typo; Block List Project malware, phishing and scam; URLhaus filter; malware-filter phishing; CyberHost malware; romainmarcoux malicious-domains. Medium adds Block List Project ransomware, fraud and abuse; Phishing.Database; phishdestroy destroylist; durablenapkin scamblocklist; HaGeZi TIF mini; ThreatFox; CERT Polska; PhishIndex; malicious-domains tiers B and C; phishunt; HaGeZi Fake; TweetFeed. Large adds HaGeZi TIF and the full URLhaus hostfile. |
-| `CAT_ADULT` | `is_adult_website_url` | StevenBlack porn; ShadowWhisperer Adult |
-| `CAT_LISTED` | `is_listed_website_url` | StevenBlack unified hosts, which mixes adware and malware; ShadowWhisperer AI, Apple, Chat, DNS, Dynamic, Junk, Remote, Risk, Shock, Top_Level, Tunnels, UrlShortener and the Wild_ lists other than ads and tracking. Medium adds maltrail suspicious and OISD small. Large adds the Block List Project redirect list. |
+| `CAT_ADULT` | `is_adult_website_url`, refused by `is_bad_website_url` | StevenBlack porn; ShadowWhisperer Adult and Shock |
+| `CAT_LISTED` | `is_listed_website_url` | StevenBlack unified hosts, which mixes adware and malware; ShadowWhisperer AI, Apple, Chat, DNS, Dynamic, Junk, Remote, Risk, Top_Level, Tunnels, UrlShortener and the Wild_ lists other than ads and tracking. Medium adds maltrail suspicious and OISD small. Large adds the Block List Project redirect list. |
 
 A feed entry that is an explicit ICANN public suffix (`com.cn`, `co.uk`) is dropped at build time, and lookups never test one, so a listing like that cannot block a whole zone.
 
