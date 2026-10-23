@@ -2,6 +2,8 @@
 
 A Rust library to shield your system from malicious and unwanted websites by categorizing and blocking them.
 
+**Want it as an app?** [Spider Shield](https://spider.cloud/shield/?utm_source=github&utm_medium=readme&utm_campaign=spider_firewall) runs this crate across your whole device and blocks ads, trackers, malware and phishing on macOS, Windows, Linux and Android. Free, with no account.
+
 ## Installation
 
 Add `spider_firewall` to your Cargo project with:
