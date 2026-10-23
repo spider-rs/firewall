@@ -5,7 +5,7 @@ authors = [
     "j-mendez <jeff@spider.cloud>"
 ]
 description = "Firewall to use for Spider Web Crawler."
-repository = "https://github.com/spider-rs/spider_firewall"
+repository = "https://github.com/spider-rs/firewall"
 readme = "README.md"
 keywords = ["crawler", "firewall"]
 categories = ["web-programming", "command-line-utilities"]
