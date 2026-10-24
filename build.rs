@@ -41,7 +41,8 @@ fn github_token() -> Option<String> {
 //  Resilient fetch layer: timeout + retry/backoff + on-disk cache
 //
 //  Env knobs (each emits `cargo:rerun-if-env-changed` in main()):
-//    SPIDER_FIREWALL_FETCH_TIMEOUT_SECS — per-request connect+total timeout (default 30)
+//    SPIDER_FIREWALL_FETCH_TIMEOUT_SECS — per-request total timeout (default 120;
+//                                         connect is capped at 30)
 //    SPIDER_FIREWALL_FETCH_RETRIES     — attempts per URL (default 4)
 //    SPIDER_FIREWALL_CACHE_DIR         — cache dir override (default
 //                                        $CARGO_HOME/spider_firewall-buildcache,
@@ -80,10 +81,14 @@ fn fetch_retries() -> u32 {
     env_u64("SPIDER_FIREWALL_FETCH_RETRIES", 4).clamp(1, 16) as u32
 }
 
-/// Per-request connect + total timeout
-/// (`SPIDER_FIREWALL_FETCH_TIMEOUT_SECS`, default 30s, clamped 1..=600).
+/// Per-request total timeout (`SPIDER_FIREWALL_FETCH_TIMEOUT_SECS`, default
+/// 120s, clamped 1..=600). Some lists are tens of MB, so the total has to
+/// cover a slow link; [`CONNECT_TIMEOUT`] still fails a dead host fast.
+/// Upper bound on connecting to a list host.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
 fn fetch_timeout() -> Duration {
-    Duration::from_secs(env_u64("SPIDER_FIREWALL_FETCH_TIMEOUT_SECS", 30).clamp(1, 600))
+    Duration::from_secs(env_u64("SPIDER_FIREWALL_FETCH_TIMEOUT_SECS", 120).clamp(1, 600))
 }
 
 /// Stable FNV-1a 64-bit hash, hex-encoded — cache filename for a URL.
@@ -910,12 +915,14 @@ fn main() -> BuildResult<()> {
     println!("cargo:rerun-if-env-changed=SPIDER_FIREWALL_FETCH_RETRIES");
     println!("cargo:rerun-if-env-changed=SPIDER_FIREWALL_FETCH_TIMEOUT_SECS");
 
-    // Per-request connect + total timeout so a hung upstream connection can
-    // never block the build indefinitely.
+    // Per-request total and connect timeouts so a hung upstream connection can
+    // never block the build indefinitely. gzip cuts the largest lists to about
+    // a third of their size on the wire.
     let timeout = fetch_timeout();
     let client = Client::builder()
         .timeout(timeout)
-        .connect_timeout(timeout)
+        .connect_timeout(timeout.min(CONNECT_TIMEOUT))
+        .gzip(true)
         .build()
         .expect("spider_firewall: failed to build HTTP client");
 
