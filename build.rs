@@ -1473,6 +1473,22 @@ fn main() -> BuildResult<()> {
         parse_domain_lines(&body, &mut unique_entries);
     }
 
+    // ----------------------------
+    // HaGeZi — Gambling Blocklist Medium (GPLv3)
+    // Expands gambling coverage beyond the ShadowWhisperer small-tier list with
+    // ~181k domains targeting gambling-related sites. Plain domain format ("without
+    // subdomains" syntax); updated every 8 hours. Gated to medium tier and the
+    // `gambling` feature so it never activates for callers that don't opt in.
+    // (c) hagezi — https://github.com/hagezi/dns-blocklists — GPLv3.
+    // ----------------------------
+    if tier_medium && include_gambling {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/gambling.medium-onlydomains.txt",
+        );
+        parse_domain_lines(&body, &mut unique_gambling_entries);
+    }
+
     // ============================================================
     //  LARGE tier sources (comprehensive protection)
     // ============================================================
@@ -1508,6 +1524,22 @@ fn main() -> BuildResult<()> {
             "https://raw.githubusercontent.com/blocklistproject/Lists/master/alt-version/ads-nl.txt",
         );
         parse_domain_lines(&body, &mut unique_ads_entries);
+    }
+
+    // ----------------------------
+    // HaGeZi — NSFW Blocklist (GPLv3)
+    // Expands adult-content coverage beyond the StevenBlack porn alternate with
+    // ~92k domains. Plain domain format ("without subdomains" syntax); updated
+    // every 8 hours. Gated to large tier and the `bad` feature; entries go into
+    // unique_adult_entries (CAT_ADULT).
+    // (c) hagezi — https://github.com/hagezi/dns-blocklists — GPLv3.
+    // ----------------------------
+    if tier_large && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/nsfw-onlydomains.txt",
+        );
+        parse_domain_lines(&body, &mut unique_adult_entries);
     }
 
     // ----------------------------
