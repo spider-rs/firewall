@@ -1474,6 +1474,26 @@ fn main() -> BuildResult<()> {
     }
 
     // ----------------------------
+    // GlobalAntiScam Organization — Scam & Phishing Domains (BSD-3-Clause)
+    // GASO-verified scam and phishing domains; focuses on investment fraud,
+    // financial credential harvesting and delivery-impersonation phishing,
+    // with strong Asia-Pacific coverage (crypto exchange impostors, fake
+    // loan apps, parcel-tracking lures). Plain domain list; ~6–8 k entries;
+    // updated once a day via GitHub Actions scraper. CDN/cloud FP risk: low
+    // (all entries are specific scam domains, not shared hosting ranges).
+    // Mirror by Wu Tingfeng (elliotwutingfeng) — BSD-3-Clause.
+    // Source: (c) Global Anti-Scam Organization (globalantiscam.org).
+    // https://github.com/elliotwutingfeng/GlobalAntiScamOrg-blocklist
+    // ----------------------------
+    if tier_medium && include_bad {
+        let body = fetch_text(
+            &client,
+            "https://raw.githubusercontent.com/elliotwutingfeng/GlobalAntiScamOrg-blocklist/main/global-anti-scam-org-scam-urls-pihole.txt",
+        );
+        parse_domain_lines(&body, &mut unique_entries);
+    }
+
+    // ----------------------------
     // HaGeZi — Gambling Blocklist Medium (GPLv3)
     // Expands gambling coverage beyond the ShadowWhisperer small-tier list with
     // ~181k domains targeting gambling-related sites. Plain domain format ("without
